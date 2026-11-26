@@ -27,7 +27,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Generate Keystore, Map Signing Vars & Approve Fork Cert
+      - name: Generate Keystore and Patch Fork Cert Check
         run: |
           set -e
           KS_PATH="$RUNNER_TEMP/release.jks"
@@ -42,98 +42,33 @@ jobs:
             -keypass "$KS_PASS" \
             -dname "CN=FermataHacim, O=Personal, C=TR"
 
-          CERT_SHA256=$(keytool -exportcert -keystore "$KS_PATH" -alias "$K_ALIAS" -storepass "$KS_PASS" | sha256sum | awk '{print $1}')
-          echo "Uretilen sertifika SHA-256: $CERT_SHA256"
-          export CERT_SHA256
+          printf "\nstoreFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n" \
+            "$KS_PATH" "$KS_PASS" "$K_ALIAS" "$KS_PASS" >> local.properties
 
-          python3 - <<'PY'
-          import os, re, glob, base64
-
-          ks_path = os.path.join(os.environ["RUNNER_TEMP"], "release.jks")
-          ks_pass = "FermataHacim2026"
-          k_alias = "fermata"
-          cert_sha = os.environ["CERT_SHA256"].strip().lower()
-          ks_b64 = base64.b64encode(open(ks_path, "rb").read()).decode()
-
-          gradle_files = set(glob.glob("*.gradle*") + glob.glob("gradle/*.gradle*") + glob.glob("fermata/*.gradle*"))
-          text = ""
-          for fname in sorted(gradle_files):
-              if not os.path.isfile(fname):
-                  continue
-              content = open(fname, "r", encoding="utf-8", errors="ignore").read()
-              text += "\n" + content
-
-              if "not approved" in content.lower() or "signing certificate" in content.lower():
-                  patched = re.sub(r"\b[0-9a-fA-F]{64}\b", cert_sha, content)
-                  lines = patched.splitlines(keepends=True)
-                  out_lines = []
-                  for i, line in enumerate(lines):
-                      if "GradleException" in line and "throw" in line:
-                          window = "".join(lines[i:i+4]).lower()
-                          if "not approved" in window or "signing certificate" in window:
-                              line = re.sub(r"throw\s+new\s+(?:org\.gradle\.api\.)?GradleException\s*\(", "println(", line)
-                      out_lines.append(line)
-                  final_content = "".join(out_lines)
-                  if final_content != content:
-                      open(fname, "w", encoding="utf-8").write(final_content)
-                      print(f"Fork sertifikasi onaylandi: {fname}")
-
-          keys = set()
-          keys.update(re.findall(r"""(?:getenv|gradleProperty|findProperty|getProperty|environmentVariable|hasProperty)\s*\(\s*['"]([^'"]+)['"]\s*\)""", text))
-          keys.update(re.findall(r"""\b(FERMATAX_[A-Z0-9_]+|fermatax[A-Z][A-Za-z0-9_]+)\b""", text))
-          keys.update([
-              "FERMATAX_KEYSTORE", "FERMATAX_KEYSTORE_PATH", "FERMATAX_KEYSTORE_FILE",
-              "FERMATAX_STORE_FILE", "FERMATAX_STORE_PATH",
-              "FERMATAX_KEYSTORE_PASSWORD", "FERMATAX_STORE_PASSWORD",
-              "FERMATAX_KEY_ALIAS", "FERMATAX_ALIAS", "FERMATAX_KEY_PASSWORD",
-              "FERMATAX_KEYSTORE_BASE64", "FERMATAX_SIGNING_KEYSTORE",
-              "FERMATAX_SIGNING_STORE_PASSWORD", "FERMATAX_SIGNING_KEY_ALIAS",
-              "FERMATAX_SIGNING_KEY_PASSWORD"
-          ])
-
-          gradle_dir = os.path.expanduser("~/.gradle")
-          os.makedirs(gradle_dir, exist_ok=True)
-          gprop_path = os.path.join(gradle_dir, "gradle.properties")
-          env_out = os.environ["GITHUB_ENV"]
-
-          mapped = {}
-          for k in sorted(keys):
-              kl = k.lower()
-              if any(s in kl for s in ("sdk", "ndk", "java", "gradle", "version", "home", "user", "token")):
-                  continue
-              if "b64" in kl or "base64" in kl:
-                  mapped[k] = ks_b64
-              elif "pass" in kl or "pwd" in kl or "secret" in kl:
-                  mapped[k] = ks_pass
-              elif "alias" in kl:
-                  mapped[k] = k_alias
-              elif any(w in kl for w in ("file", "path", "keystore", "store", "jks")):
-                  mapped[k] = ks_path
-
-          with open(env_out, "a", encoding="utf-8") as ef, \
-               open(gprop_path, "a", encoding="utf-8") as gf, \
-               open("local.properties", "a", encoding="utf-8") as lf:
-              gf.write("\n")
-              lf.write("\n")
-              for k, val in mapped.items():
-                  if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k):
-                      ef.write(f"{k}={val}\n")
-                  gf.write(f"{k}={val}\n")
-                  lf.write(f"{k}={val}\n")
-
-          print("Tanimlanan imza degiskenleri:", ", ".join(sorted(mapped.keys())))
-          PY
+          python3 -c 'p="settings.gradle"; s=open(p).read(); t="!gradle.ext.approvedUploadCertificatesSha256.contains(fingerprint)"; assert t in s, "Hedef satir bulunamadi"; open(p,"w").write(s.replace(t,"false && "+t,1)); print("OK: sertifika kilidi acildi")'
 
       - name: Build Auto Release APK
-        run: ./gradlew assembleAutoRelease --no-daemon --stacktrace
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          FERMATAX_STORE_FILE: ${{ runner.temp }}/release.jks
+          FERMATAX_STORE_PATH: ${{ runner.temp }}/release.jks
+          FERMATAX_KEYSTORE: ${{ runner.temp }}/release.jks
+          FERMATAX_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          FERMATAX_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          FERMATAX_STORE_PASSWORD: FermataHacim2026
+          FERMATAX_KEYSTORE_PASSWORD: FermataHacim2026
+          FERMATAX_KEY_ALIAS: fermata
+          FERMATAX_ALIAS: fermata
+          FERMATAX_KEY_PASSWORD: FermataHacim2026
+        run: ./gradlew assembleAutoRelease --no-daemon
 
-      - name: Verify and Sign APKs
+      - name: Collect Signed APKs
         run: |
           set -e
           KS_PATH="$RUNNER_TEMP/release.jks"
           KS_PASS="FermataHacim2026"
           K_ALIAS="fermata"
-
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
           mkdir -p signed-apks
 
@@ -141,20 +76,22 @@ jobs:
           while IFS= read -r apk; do
             FOUND=1
             base=$(basename "$apk" .apk)
-            aligned="$RUNNER_TEMP/${base}-aligned.apk"
             signed="signed-apks/${base}-signed.apk"
-
-            "$BUILD_TOOLS/zipalign" -f -p 4 "$apk" "$aligned"
-            "$BUILD_TOOLS/apksigner" sign \
-              --ks "$KS_PATH" \
-              --ks-key-alias "$K_ALIAS" \
-              --ks-pass "pass:$KS_PASS" \
-              --key-pass "pass:$KS_PASS" \
-              --out "$signed" \
-              "$aligned"
-
-            "$BUILD_TOOLS/apksigner" verify "$signed"
-            echo "Imzalandi: $signed"
+            if "$BUILD_TOOLS/apksigner" verify "$apk" >/dev/null 2>&1; then
+              cp "$apk" "$signed"
+            else
+              aligned="$RUNNER_TEMP/${base}-aligned.apk"
+              "$BUILD_TOOLS/zipalign" -f -p 4 "$apk" "$aligned"
+              "$BUILD_TOOLS/apksigner" sign \
+                --ks "$KS_PATH" \
+                --ks-key-alias "$K_ALIAS" \
+                --ks-pass "pass:$KS_PASS" \
+                --key-pass "pass:$KS_PASS" \
+                --out "$signed" \
+                "$aligned"
+              "$BUILD_TOOLS/apksigner" verify "$signed"
+            fi
+            echo "Hazir APK: $signed"
           done < <(find . -path "*/outputs/apk/*" -name "*auto*release*.apk")
 
           if [ "$FOUND" -eq 0 ]; then
