@@ -14,6 +14,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -27,8 +28,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Install Pillow for Logo Processing
-        run: python3 -m pip install --quiet Pillow
+      - name: Install Pillow & HEIF Support
+        run: python3 -m pip install --quiet Pillow pillow-heif
 
       - name: Generate Keystore and Patch Fork Cert Check
         run: |
@@ -53,150 +54,197 @@ jobs:
       - name: Apply ANKA_RA Branding, Logo, Coffee Removal & Inspections
         run: |
           python3 - <<'PY'
-          import os, re, glob
+          import os, re, glob, subprocess
           from PIL import Image, ImageOps
+
+          try:
+              import pillow_heif
+              pillow_heif.register_heif_opener()
+          except Exception as e:
+              print("pillow_heif yuklenemedi (devam):", e)
 
           APP_NAME = "ANKA_RA"
 
-          # 1) UYGULAMA ADINI ANKA_RA YAP
+          # 1) UYGULAMA ADINI ANKA_RA YAP (genisletilmis arama + log)
           name_patched = 0
-          for root in ("fermata/src", "fermata"):
+          name_hits = []
+          app_key_pat = re.compile(
+              r'(<string\b[^>]*\bname="(?:app_name|app_name_auto|app_name_mobile|fermata_app_name|launcher_name|app_label)"[^>]*>)(.*?)(</string>)',
+              re.DOTALL | re.IGNORECASE
+          )
+          exact_fermata_val_pat = re.compile(
+              r'(<string\b[^>]*>)\s*Fermata(?:X)?(?:\s+Auto|\s+Control|\s+Mobile)?\s*(</string>)',
+              re.IGNORECASE
+          )
+
+          for root in ("fermata", "depends"):
               if not os.path.isdir(root):
                   continue
               for dp, _, files in os.walk(root):
-                  if "/build/" in dp or dp.startswith("fermata/build"):
+                  if "/build/" in dp or dp.endswith("/build"):
                       continue
                   for fn in files:
                       p = os.path.join(dp, fn)
-                      if fn == "strings.xml":
+                      if fn.endswith(".xml") and ("values" in dp or fn == "AndroidManifest.xml"):
                           orig = open(p, encoding="utf-8", errors="ignore").read()
-                          new_txt = re.sub(
-                              r'(<string\s+name="(?:app_name|app_name_auto|fermata_app_name|launcher_name)"[^>]*>)(.*?)(</string>)',
-                              r'\g<1>' + APP_NAME + r'\g<3>',
-                              orig,
-                              flags=re.DOTALL
-                          )
+                          new_txt = orig
+                          if fn != "AndroidManifest.xml":
+                              new_txt = app_key_pat.sub(r'\g<1>' + APP_NAME + r'\g<3>', new_txt)
+                              new_txt = exact_fermata_val_pat.sub(r'\g<1>' + APP_NAME + r'\g<2>', new_txt)
+                          else:
+                              new_txt = re.sub(r'android:label="Fermata[^"]*"', f'android:label="{APP_NAME}"', new_txt)
                           if new_txt != orig:
                               open(p, "w", encoding="utf-8").write(new_txt)
                               name_patched += 1
                               print(f"Ad degistirildi: {p}")
+                          for idx, line in enumerate(orig.splitlines(), 1):
+                              if re.search(r'(app_name|FermataX|Fermata Auto|android:label)', line, re.IGNORECASE) and len(name_hits) < 40:
+                                  name_hits.append(f"{p}:{idx}: {line.strip()[:120]}")
                       elif fn in ("build.gradle", "build.gradle.kts"):
                           orig = open(p, encoding="utf-8", errors="ignore").read()
                           new_txt = re.sub(
-                              r'(resValue\s*\(?\s*["\']string["\']\s*,\s*["\']app_name["\']\s*,\s*["\'])([^"\']+)(["\']\s*\)?)',
+                              r'(resValue\s*\(?\s*["\']string["\']\s*,\s*["\']app_name[^"\']*["\']\s*,\s*["\'])([^"\']+)(["\']\s*\)?)',
                               r'\g<1>' + APP_NAME + r'\g<3>',
                               orig
+                          )
+                          new_txt = re.sub(
+                              r'(["\']?appName["\']?\s*[:=]\s*["\'])([^"\']+)(["\'])',
+                              r'\g<1>' + APP_NAME + r'\g<3>',
+                              new_txt
                           )
                           if new_txt != orig:
                               open(p, "w", encoding="utf-8").write(new_txt)
                               name_patched += 1
                               print(f"Gradle app_name degistirildi: {p}")
-                      elif fn == "AndroidManifest.xml":
-                          orig = open(p, encoding="utf-8", errors="ignore").read()
-                          new_txt = re.sub(
-                              r'android:label="Fermata[^"]*"',
-                              f'android:label="{APP_NAME}"',
-                              orig
-                          )
-                          if new_txt != orig:
-                              open(p, "w", encoding="utf-8").write(new_txt)
-                              name_patched += 1
-                              print(f"Manifest label degistirildi: {p}")
-          print(f"Toplam ad yamasi: {name_patched}")
+                          for idx, line in enumerate(orig.splitlines(), 1):
+                              if re.search(r'(app_name|appName|Fermata)', line, re.IGNORECASE) and len(name_hits) < 40:
+                                  name_hits.append(f"{p}:{idx}: {line.strip()[:120]}")
 
-          # 2) LOGOYU ANKA_RA YAP
+          print(f"Toplam ad yamasi: {name_patched}")
+          for h in name_hits[:25]:
+              print("  [AD]", h)
+
+          # 2) LOGOYU ANKA_RA YAP (format donusturmeli ve guvenli)
           logo_candidates = []
           for pat in ("anka_ra_logo.*", "logo.*", "1000314003.*", "res/anka_ra_logo.*", ".github/anka_ra_logo.*"):
               logo_candidates.extend(glob.glob(pat))
-          logo_candidates = [c for c in logo_candidates if c.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+          logo_candidates = [c for c in logo_candidates if os.path.isfile(c) and c.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".heic", ".avif"))]
+
+          def load_logo_image(path):
+              sz = os.path.getsize(path)
+              with open(path, "rb") as f:
+                  head = f.read(160)
+              print(f"Logo dosya bilgisi: {path} | boyut={sz} bayt | ilk baytlar={head[:60]!r}")
+              try:
+                  out = subprocess.check_output(["file", path], text=True).strip()
+                  print("file komutu ciktisi:", out)
+              except Exception:
+                  pass
+
+              try:
+                  return Image.open(path).convert("RGBA")
+              except Exception as e1:
+                  print("PIL acamadi, magick/convert/ffmpeg ile deneniyor:", e1)
+                  tmp_png = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "anka_ra_converted.png")
+                  for cmd in (["magick", path, tmp_png], ["convert", path, tmp_png], ["ffmpeg", "-y", "-i", path, tmp_png]):
+                      try:
+                          subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                          if os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 0:
+                              print("Donusturme basarili:", cmd[0])
+                              return Image.open(tmp_png).convert("RGBA")
+                      except Exception:
+                          continue
+                  return None
 
           if logo_candidates:
               logo_path = logo_candidates[0]
-              print(f"Logo bulundu: {logo_path}")
-              img = Image.open(logo_path).convert("RGBA")
-              w, h = img.size
-              side = min(w, h)
-              img = ImageOps.fit(img, (side, side), method=Image.Resampling.LANCZOS)
+              img = load_logo_image(logo_path)
+              if img is not None:
+                  w, h = img.size
+                  side = min(w, h)
+                  img = ImageOps.fit(img, (side, side), method=Image.Resampling.LANCZOS)
 
-              icon_names = {"ic_launcher", "ic_launcher_round"}
-              for mf in glob.glob("fermata/src/**/AndroidManifest.xml", recursive=True):
-                  mtxt = open(mf, encoding="utf-8", errors="ignore").read()
-                  for m in re.finditer(r'android:(?:icon|roundIcon)="@mipmap/([^"]+)"', mtxt):
-                      icon_names.add(m.group(1))
-              print("Hedef mipmap ikon adlari:", sorted(icon_names))
+                  icon_names = {"ic_launcher", "ic_launcher_round"}
+                  for mf in glob.glob("fermata/src/**/AndroidManifest.xml", recursive=True):
+                      mtxt = open(mf, encoding="utf-8", errors="ignore").read()
+                      for m in re.finditer(r'android:(?:icon|roundIcon)="@mipmap/([^"]+)"', mtxt):
+                          icon_names.add(m.group(1))
+                  print("Hedef mipmap ikon adlari:", sorted(icon_names))
 
-              res_dirs = [d for d in ("fermata/src/main/res", "fermata/src/auto/res") if os.path.isdir(d)]
-              sizes = {
-                  "mipmap-mdpi": 48,
-                  "mipmap-hdpi": 72,
-                  "mipmap-xhdpi": 96,
-                  "mipmap-xxhdpi": 144,
-                  "mipmap-xxxhdpi": 192,
-              }
-              fg_sizes = {
-                  "mipmap-mdpi": 108,
-                  "mipmap-hdpi": 162,
-                  "mipmap-xhdpi": 216,
-                  "mipmap-xxhdpi": 324,
-                  "mipmap-xxxhdpi": 432,
-              }
+                  res_dirs = [d for d in ("fermata/src/main/res", "fermata/src/auto/res") if os.path.isdir(d)]
+                  sizes = {
+                      "mipmap-mdpi": 48,
+                      "mipmap-hdpi": 72,
+                      "mipmap-xhdpi": 96,
+                      "mipmap-xxhdpi": 144,
+                      "mipmap-xxxhdpi": 192,
+                  }
+                  fg_sizes = {
+                      "mipmap-mdpi": 108,
+                      "mipmap-hdpi": 162,
+                      "mipmap-xhdpi": 216,
+                      "mipmap-xxhdpi": 324,
+                      "mipmap-xxxhdpi": 432,
+                  }
 
-              for rdir in res_dirs:
-                  for dp, _, files in os.walk(rdir):
-                      base = os.path.basename(dp)
-                      if not base.startswith("mipmap-"):
-                          continue
-                      for fn in files:
-                          stem = os.path.splitext(fn)[0]
-                          if stem in icon_names or stem == "anka_ra_ic_fg":
-                              os.remove(os.path.join(dp, fn))
-                              print(f"Eski ikon silindi: {os.path.join(dp, fn)}")
+                  for rdir in res_dirs:
+                      for dp, _, files in os.walk(rdir):
+                          base = os.path.basename(dp)
+                          if not base.startswith("mipmap-"):
+                              continue
+                          for fn in files:
+                              stem = os.path.splitext(fn)[0]
+                              if stem in icon_names or stem == "anka_ra_ic_fg":
+                                  os.remove(os.path.join(dp, fn))
+                                  print(f"Eski ikon silindi: {os.path.join(dp, fn)}")
 
-                  for folder, px in sizes.items():
-                      out_dir = os.path.join(rdir, folder)
-                      os.makedirs(out_dir, exist_ok=True)
-                      resized = img.resize((px, px), Image.Resampling.LANCZOS)
+                      for folder, px in sizes.items():
+                          out_dir = os.path.join(rdir, folder)
+                          os.makedirs(out_dir, exist_ok=True)
+                          resized = img.resize((px, px), Image.Resampling.LANCZOS)
+                          for iname in icon_names:
+                              resized.save(os.path.join(out_dir, f"{iname}.png"))
+
+                      for folder, px in fg_sizes.items():
+                          out_dir = os.path.join(rdir, folder)
+                          os.makedirs(out_dir, exist_ok=True)
+                          canvas = Image.new("RGBA", (px, px), (5, 8, 18, 255))
+                          inner = int(px * 0.72)
+                          fg_icon = img.resize((inner, inner), Image.Resampling.LANCZOS)
+                          off = (px - inner) // 2
+                          canvas.paste(fg_icon, (off, off), fg_icon)
+                          canvas.save(os.path.join(out_dir, "anka_ra_ic_fg.png"))
+
+                      anydpi = os.path.join(rdir, "mipmap-anydpi-v26")
+                      os.makedirs(anydpi, exist_ok=True)
+                      adaptive_xml = (
+                          '<?xml version="1.0" encoding="utf-8"?>\n'
+                          '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                          '    <background android:drawable="@color/anka_ra_icon_bg" />\n'
+                          '    <foreground android:drawable="@mipmap/anka_ra_ic_fg" />\n'
+                          '</adaptive-icon>\n'
+                      )
                       for iname in icon_names:
-                          resized.save(os.path.join(out_dir, f"{iname}.png"))
+                          open(os.path.join(anydpi, f"{iname}.xml"), "w", encoding="utf-8").write(adaptive_xml)
 
-                  for folder, px in fg_sizes.items():
-                      out_dir = os.path.join(rdir, folder)
-                      os.makedirs(out_dir, exist_ok=True)
-                      canvas = Image.new("RGBA", (px, px), (5, 8, 18, 255))
-                      inner = int(px * 0.72)
-                      fg_icon = img.resize((inner, inner), Image.Resampling.LANCZOS)
-                      off = (px - inner) // 2
-                      canvas.paste(fg_icon, (off, off), fg_icon)
-                      canvas.save(os.path.join(out_dir, "anka_ra_ic_fg.png"))
-
-                  anydpi = os.path.join(rdir, "mipmap-anydpi-v26")
-                  os.makedirs(anydpi, exist_ok=True)
-                  adaptive_xml = (
-                      '<?xml version="1.0" encoding="utf-8"?>\n'
-                      '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-                      '    <background android:drawable="@color/anka_ra_icon_bg" />\n'
-                      '    <foreground android:drawable="@mipmap/anka_ra_ic_fg" />\n'
-                      '</adaptive-icon>\n'
-                  )
-                  for iname in icon_names:
-                      open(os.path.join(anydpi, f"{iname}.xml"), "w", encoding="utf-8").write(adaptive_xml)
-
-                  val_dir = os.path.join(rdir, "values")
-                  os.makedirs(val_dir, exist_ok=True)
-                  open(os.path.join(val_dir, "anka_ra_colors.xml"), "w", encoding="utf-8").write(
-                      '<?xml version="1.0" encoding="utf-8"?>\n'
-                      '<resources>\n'
-                      '    <color name="anka_ra_icon_bg">#050812</color>\n'
-                      '</resources>\n'
-                  )
-              print("OK: ANKA_RA logosu tum cozunurluklere islendi.")
+                      val_dir = os.path.join(rdir, "values")
+                      os.makedirs(val_dir, exist_ok=True)
+                      open(os.path.join(val_dir, "anka_ra_colors.xml"), "w", encoding="utf-8").write(
+                          '<?xml version="1.0" encoding="utf-8"?>\n'
+                          '<resources>\n'
+                          '    <color name="anka_ra_icon_bg">#050812</color>\n'
+                          '</resources>\n'
+                      )
+                  print("OK: ANKA_RA logosu tum cozunurluklere islendi.")
+              else:
+                  print("UYARI: Logo gecerli gorsel olarak acilamadi; derlemeye devam ediliyor.")
           else:
-              print("UYARI: Logo dosyasi bulunamadi! Repoya 1000314003.jpg veya anka_ra_logo.jpg olarak yukleyin.")
+              print("UYARI: Logo dosyasi bulunamadi.")
 
           # 3) KAHVE / BAGIS TEMIZLIGI + ADDON INCELEME
           roots = [r for r in ("fermata/src", "modules", "depends/utils/src") if os.path.isdir(r)]
           coffee_text_pat = re.compile(r'(kahve|coffee|buymeacoffee|ko-fi|kofi|donate|donation|bağış|bagis|sponsor|patreon|tip\s*jar|destek\s*ol)', re.IGNORECASE)
-          string_pat = re.compile(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', re.DOTALL | re.IGNORECASE)
+          string_pat = re.compile(r'<string\b[^>]*\bname="([^"]+)"[^>]*>(.*?)</string>', re.DOTALL | re.IGNORECASE)
 
           coffee_keys = set()
           for root in roots:
