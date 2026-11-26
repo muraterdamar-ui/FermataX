@@ -331,7 +331,12 @@ jobs:
           banner_java = "fermata/src/main/java/me/aap/fermata/ui/view/PhoneSupportBannerController.java"
           if os.path.isfile(banner_java):
               src = open(banner_java, encoding="utf-8").read()
-              new_src = src.replace("View.VISIBLE", "View.GONE")
+              # import static satirlarina dokunmadan sadece setVisibility(...) cagrilarini GONE yap
+              new_src = re.sub(
+                  r'\.setVisibility\(\s*(?:(?:android\.view\.)?View\.)?VISIBLE\s*\)',
+                  '.setVisibility(android.view.View.GONE)',
+                  src
+              )
               # Banner gosteren void metotlari erken sonlandir
               void_pat = re.compile(r'(\bvoid\s+(?:show|maybeShow|display|schedule|attach|bind|start|init|onStart|onResume)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*\{)')
               new_src = void_pat.sub(r'\1 if (true) return; ', new_src)
