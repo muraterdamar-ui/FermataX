@@ -47,6 +47,83 @@ jobs:
 
           python3 -c 'p="settings.gradle"; s=open(p).read(); t="!gradle.ext.approvedUploadCertificatesSha256.contains(fingerprint)"; assert t in s, "Hedef satir bulunamadi"; open(p,"w").write(s.replace(t,"false && "+t,1)); print("OK: sertifika kilidi acildi")'
 
+      - name: Remove Donate and Buy Me a Coffee Prompts
+        run: |
+          python3 - <<'PY'
+          import os, re
+
+          roots = [r for r in ("fermata/src", "modules", "depends/utils/src") if os.path.isdir(r)]
+          string_pat = re.compile(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', re.DOTALL | re.IGNORECASE)
+          kw_text = re.compile(r'(kahve|coffee|buymeacoffee|ko-fi|donate|bağış|bagis|paypal|destek\s*ol)', re.IGNORECASE)
+
+          found_keys = set()
+          for root in roots:
+              for dp, _, files in os.walk(root):
+                  for fn in files:
+                      if fn.endswith(".xml") and "values" in dp:
+                          p = os.path.join(dp, fn)
+                          txt = open(p, encoding="utf-8", errors="ignore").read()
+                          for m in string_pat.finditer(txt):
+                              if kw_text.search(m.group(1)) or kw_text.search(m.group(2)):
+                                  found_keys.add(m.group(1))
+
+          print("Bulunan string anahtarlari:", sorted(found_keys))
+
+          java_pat = re.compile(
+              r'(\bvoid\s+[A-Za-z0-9_]*(?:donate|coffee|buymeacoffee|sponsor|patron)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*(?:throws\s+[^{;]+)?\{)',
+              re.IGNORECASE
+          )
+          kt_pat = re.compile(
+              r'(\bfun\s+[A-Za-z0-9_]*(?:donate|coffee|buymeacoffee|sponsor|patron)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*\{)',
+              re.IGNORECASE
+          )
+          menu_pat = re.compile(r'<item\b[^>]*>', re.DOTALL)
+          key_ref_pat = re.compile(
+              r'(' + '|'.join(re.escape(k) for k in sorted(found_keys)) + r'|buymeacoffee|ko-fi|coffee|donate)',
+              re.IGNORECASE
+          ) if found_keys else re.compile(r'(buymeacoffee|ko-fi|coffee|donate)', re.IGNORECASE)
+
+          def patch_menu_item(m):
+              tag = m.group(0)
+              if re.search(r'(donate|coffee|buymeacoffee|sponsor)', tag, re.IGNORECASE):
+                  if 'android:visible' not in tag:
+                      if tag.endswith('/>'):
+                          return tag[:-2] + ' android:visible="false" />'
+                      return tag[:-1] + ' android:visible="false">'
+              return tag
+
+          patched_files = 0
+          hits = []
+
+          for root in roots:
+              for dp, _, files in os.walk(root):
+                  for fn in files:
+                      p = os.path.join(dp, fn)
+                      if fn.endswith((".java", ".kt")):
+                          orig = open(p, encoding="utf-8", errors="ignore").read()
+                          new_txt, n = (java_pat if fn.endswith(".java") else kt_pat).subn(r'\1 if (true) return; ', orig)
+                          if n > 0:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              patched_files += 1
+                              print(f"Metot kapatildi ({n}): {p}")
+                          for idx, line in enumerate(orig.splitlines(), 1):
+                              if key_ref_pat.search(line) and len(hits) < 40:
+                                  hits.append(f"{p}:{idx}: {line.strip()[:140]}")
+                      elif fn.endswith(".xml") and "menu" in dp:
+                          orig = open(p, encoding="utf-8", errors="ignore").read()
+                          new_txt = menu_pat.sub(patch_menu_item, orig)
+                          if new_txt != orig:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              patched_files += 1
+                              print(f"Menu gizlendi: {p}")
+
+          print(f"Toplam yamalanan dosya: {patched_files}")
+          if hits:
+              print("--- Kod icindeki referanslar (kontrol icin) ---")
+              for h in hits:
+                  print(h)
+          PY
+
       - name: Build Auto Release Bundle (AAB)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
