@@ -1,4 +1,4 @@
-name: Build Signed Fermata Auto APK (Zero-PC)
+name: Build Signed ANKA_RA Auto APK (Zero-PC)
 
 on:
   push:
@@ -27,6 +27,9 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Install Pillow for Logo Processing
+        run: python3 -m pip install --quiet Pillow
+
       - name: Generate Keystore and Patch Fork Cert Check
         run: |
           set -e
@@ -40,88 +43,261 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "$KS_PASS" \
             -keypass "$KS_PASS" \
-            -dname "CN=FermataHacim, O=Personal, C=TR"
+            -dname "CN=ANKA_RA, O=Personal, C=TR"
 
           printf "\nstoreFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n" \
             "$KS_PATH" "$KS_PASS" "$K_ALIAS" "$KS_PASS" >> local.properties
 
           python3 -c 'p="settings.gradle"; s=open(p).read(); t="!gradle.ext.approvedUploadCertificatesSha256.contains(fingerprint)"; assert t in s, "Hedef satir bulunamadi"; open(p,"w").write(s.replace(t,"false && "+t,1)); print("OK: sertifika kilidi acildi")'
 
-      - name: Remove Donate and Buy Me a Coffee Prompts
+      - name: Apply ANKA_RA Branding, Logo, Coffee Removal & Inspections
         run: |
           python3 - <<'PY'
-          import os, re
+          import os, re, glob
+          from PIL import Image, ImageOps
 
+          APP_NAME = "ANKA_RA"
+
+          # 1) UYGULAMA ADINI ANKA_RA YAP
+          name_patched = 0
+          for root in ("fermata/src", "fermata"):
+              if not os.path.isdir(root):
+                  continue
+              for dp, _, files in os.walk(root):
+                  if "/build/" in dp or dp.startswith("fermata/build"):
+                      continue
+                  for fn in files:
+                      p = os.path.join(dp, fn)
+                      if fn == "strings.xml":
+                          orig = open(p, encoding="utf-8", errors="ignore").read()
+                          new_txt = re.sub(
+                              r'(<string\s+name="(?:app_name|app_name_auto|fermata_app_name|launcher_name)"[^>]*>)(.*?)(</string>)',
+                              r'\g<1>' + APP_NAME + r'\g<3>',
+                              orig,
+                              flags=re.DOTALL
+                          )
+                          if new_txt != orig:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              name_patched += 1
+                              print(f"Ad degistirildi: {p}")
+                      elif fn in ("build.gradle", "build.gradle.kts"):
+                          orig = open(p, encoding="utf-8", errors="ignore").read()
+                          new_txt = re.sub(
+                              r'(resValue\s*\(?\s*["\']string["\']\s*,\s*["\']app_name["\']\s*,\s*["\'])([^"\']+)(["\']\s*\)?)',
+                              r'\g<1>' + APP_NAME + r'\g<3>',
+                              orig
+                          )
+                          if new_txt != orig:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              name_patched += 1
+                              print(f"Gradle app_name degistirildi: {p}")
+                      elif fn == "AndroidManifest.xml":
+                          orig = open(p, encoding="utf-8", errors="ignore").read()
+                          new_txt = re.sub(
+                              r'android:label="Fermata[^"]*"',
+                              f'android:label="{APP_NAME}"',
+                              orig
+                          )
+                          if new_txt != orig:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              name_patched += 1
+                              print(f"Manifest label degistirildi: {p}")
+          print(f"Toplam ad yamasi: {name_patched}")
+
+          # 2) LOGOYU ANKA_RA YAP
+          logo_candidates = []
+          for pat in ("anka_ra_logo.*", "logo.*", "1000314003.*", "res/anka_ra_logo.*", ".github/anka_ra_logo.*"):
+              logo_candidates.extend(glob.glob(pat))
+          logo_candidates = [c for c in logo_candidates if c.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+
+          if logo_candidates:
+              logo_path = logo_candidates[0]
+              print(f"Logo bulundu: {logo_path}")
+              img = Image.open(logo_path).convert("RGBA")
+              w, h = img.size
+              side = min(w, h)
+              img = ImageOps.fit(img, (side, side), method=Image.Resampling.LANCZOS)
+
+              icon_names = {"ic_launcher", "ic_launcher_round"}
+              for mf in glob.glob("fermata/src/**/AndroidManifest.xml", recursive=True):
+                  mtxt = open(mf, encoding="utf-8", errors="ignore").read()
+                  for m in re.finditer(r'android:(?:icon|roundIcon)="@mipmap/([^"]+)"', mtxt):
+                      icon_names.add(m.group(1))
+              print("Hedef mipmap ikon adlari:", sorted(icon_names))
+
+              res_dirs = [d for d in ("fermata/src/main/res", "fermata/src/auto/res") if os.path.isdir(d)]
+              sizes = {
+                  "mipmap-mdpi": 48,
+                  "mipmap-hdpi": 72,
+                  "mipmap-xhdpi": 96,
+                  "mipmap-xxhdpi": 144,
+                  "mipmap-xxxhdpi": 192,
+              }
+              fg_sizes = {
+                  "mipmap-mdpi": 108,
+                  "mipmap-hdpi": 162,
+                  "mipmap-xhdpi": 216,
+                  "mipmap-xxhdpi": 324,
+                  "mipmap-xxxhdpi": 432,
+              }
+
+              for rdir in res_dirs:
+                  for dp, _, files in os.walk(rdir):
+                      base = os.path.basename(dp)
+                      if not base.startswith("mipmap-"):
+                          continue
+                      for fn in files:
+                          stem = os.path.splitext(fn)[0]
+                          if stem in icon_names or stem == "anka_ra_ic_fg":
+                              os.remove(os.path.join(dp, fn))
+                              print(f"Eski ikon silindi: {os.path.join(dp, fn)}")
+
+                  for folder, px in sizes.items():
+                      out_dir = os.path.join(rdir, folder)
+                      os.makedirs(out_dir, exist_ok=True)
+                      resized = img.resize((px, px), Image.Resampling.LANCZOS)
+                      for iname in icon_names:
+                          resized.save(os.path.join(out_dir, f"{iname}.png"))
+
+                  for folder, px in fg_sizes.items():
+                      out_dir = os.path.join(rdir, folder)
+                      os.makedirs(out_dir, exist_ok=True)
+                      canvas = Image.new("RGBA", (px, px), (5, 8, 18, 255))
+                      inner = int(px * 0.72)
+                      fg_icon = img.resize((inner, inner), Image.Resampling.LANCZOS)
+                      off = (px - inner) // 2
+                      canvas.paste(fg_icon, (off, off), fg_icon)
+                      canvas.save(os.path.join(out_dir, "anka_ra_ic_fg.png"))
+
+                  anydpi = os.path.join(rdir, "mipmap-anydpi-v26")
+                  os.makedirs(anydpi, exist_ok=True)
+                  adaptive_xml = (
+                      '<?xml version="1.0" encoding="utf-8"?>\n'
+                      '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                      '    <background android:drawable="@color/anka_ra_icon_bg" />\n'
+                      '    <foreground android:drawable="@mipmap/anka_ra_ic_fg" />\n'
+                      '</adaptive-icon>\n'
+                  )
+                  for iname in icon_names:
+                      open(os.path.join(anydpi, f"{iname}.xml"), "w", encoding="utf-8").write(adaptive_xml)
+
+                  val_dir = os.path.join(rdir, "values")
+                  os.makedirs(val_dir, exist_ok=True)
+                  open(os.path.join(val_dir, "anka_ra_colors.xml"), "w", encoding="utf-8").write(
+                      '<?xml version="1.0" encoding="utf-8"?>\n'
+                      '<resources>\n'
+                      '    <color name="anka_ra_icon_bg">#050812</color>\n'
+                      '</resources>\n'
+                  )
+              print("OK: ANKA_RA logosu tum cozunurluklere islendi.")
+          else:
+              print("UYARI: Logo dosyasi bulunamadi! Repoya 1000314003.jpg veya anka_ra_logo.jpg olarak yukleyin.")
+
+          # 3) KAHVE / BAGIS TEMIZLIGI + ADDON INCELEME
           roots = [r for r in ("fermata/src", "modules", "depends/utils/src") if os.path.isdir(r)]
+          coffee_text_pat = re.compile(r'(kahve|coffee|buymeacoffee|ko-fi|kofi|donate|donation|bağış|bagis|sponsor|patreon|tip\s*jar|destek\s*ol)', re.IGNORECASE)
           string_pat = re.compile(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', re.DOTALL | re.IGNORECASE)
-          kw_text = re.compile(r'(kahve|coffee|buymeacoffee|ko-fi|donate|bağış|bagis|paypal|destek\s*ol)', re.IGNORECASE)
 
-          found_keys = set()
+          coffee_keys = set()
           for root in roots:
               for dp, _, files in os.walk(root):
+                  if "/build/" in dp:
+                      continue
                   for fn in files:
                       if fn.endswith(".xml") and "values" in dp:
                           p = os.path.join(dp, fn)
                           txt = open(p, encoding="utf-8", errors="ignore").read()
                           for m in string_pat.finditer(txt):
-                              if kw_text.search(m.group(1)) or kw_text.search(m.group(2)):
-                                  found_keys.add(m.group(1))
+                              if coffee_text_pat.search(m.group(1)) or coffee_text_pat.search(m.group(2)):
+                                  coffee_keys.add(m.group(1))
+          print("Bulunan kahve/bagis string anahtarlari:", sorted(coffee_keys))
 
-          print("Bulunan string anahtarlari:", sorted(found_keys))
+          coffee_ref_parts = [r'buymeacoffee', r'ko-fi', r'kofi', r'coffee', r'kahve', r'donate', r'donation', r'sponsor']
+          coffee_ref_parts.extend(re.escape(k) for k in sorted(coffee_keys))
+          coffee_ref_pat = re.compile('(' + '|'.join(coffee_ref_parts) + ')', re.IGNORECASE)
+          addon_pat = re.compile(r'(stremio|tiktok|audiobook|Addon Module)', re.IGNORECASE)
 
-          java_pat = re.compile(
-              r'(\bvoid\s+[A-Za-z0-9_]*(?:donate|coffee|buymeacoffee|sponsor|patron)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*(?:throws\s+[^{;]+)?\{)',
-              re.IGNORECASE
-          )
-          kt_pat = re.compile(
-              r'(\bfun\s+[A-Za-z0-9_]*(?:donate|coffee|buymeacoffee|sponsor|patron)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*\{)',
-              re.IGNORECASE
-          )
-          menu_pat = re.compile(r'<item\b[^>]*>', re.DOTALL)
-          key_ref_pat = re.compile(
-              r'(' + '|'.join(re.escape(k) for k in sorted(found_keys)) + r'|buymeacoffee|ko-fi|coffee|donate)',
-              re.IGNORECASE
-          ) if found_keys else re.compile(r'(buymeacoffee|ko-fi|coffee|donate)', re.IGNORECASE)
+          def patch_functions(content):
+              pat = re.compile(
+                  r'\b(?:fun|void)\s+([A-Za-z0-9_]*(?:donate|donation|coffee|buymeacoffee|kofi|sponsor|patron|supportdialog|supportbanner|supportprompt|tipdialog)[A-Za-z0-9_]*)\s*\(',
+                  re.IGNORECASE
+              )
+              out = []
+              pos = 0
+              count = 0
+              for m in pat.finditer(content):
+                  if m.start() < pos:
+                      continue
+                  i = m.end()
+                  depth = 1
+                  while i < len(content) and depth > 0:
+                      if content[i] == '(':
+                          depth += 1
+                      elif content[i] == ')':
+                          depth -= 1
+                      i += 1
+                  if depth != 0:
+                      continue
+                  brace_idx = content.find('{', i)
+                  semi_idx = content.find(';', i)
+                  if brace_idx == -1 or (semi_idx != -1 and semi_idx < brace_idx):
+                      continue
+                  between = content[i:brace_idx].strip()
+                  if between.startswith(':'):
+                      ret_type = between[1:].strip().split()[0]
+                      if ret_type == 'Boolean':
+                          inject = ' if (true) return false; '
+                      elif ret_type == 'Unit':
+                          inject = ' if (true) return; '
+                      else:
+                          continue
+                  else:
+                      inject = ' if (true) return; '
+                  out.append(content[pos:brace_idx + 1])
+                  out.append(inject)
+                  pos = brace_idx + 1
+                  count += 1
+              out.append(content[pos:])
+              return ''.join(out), count
 
-          def patch_menu_item(m):
-              tag = m.group(0)
-              if re.search(r'(donate|coffee|buymeacoffee|sponsor)', tag, re.IGNORECASE):
-                  if 'android:visible' not in tag:
-                      if tag.endswith('/>'):
-                          return tag[:-2] + ' android:visible="false" />'
-                      return tag[:-1] + ' android:visible="false">'
-              return tag
-
-          patched_files = 0
-          hits = []
-
+          coffee_hits = []
+          addon_hits = []
           for root in roots:
               for dp, _, files in os.walk(root):
+                  if "/build/" in dp:
+                      continue
                   for fn in files:
                       p = os.path.join(dp, fn)
-                      if fn.endswith((".java", ".kt")):
+                      if fn.endswith((".kt", ".java")):
                           orig = open(p, encoding="utf-8", errors="ignore").read()
-                          new_txt, n = (java_pat if fn.endswith(".java") else kt_pat).subn(r'\1 if (true) return; ', orig)
+                          patched, n = patch_functions(orig)
                           if n > 0:
-                              open(p, "w", encoding="utf-8").write(new_txt)
-                              patched_files += 1
-                              print(f"Metot kapatildi ({n}): {p}")
+                              open(p, "w", encoding="utf-8").write(patched)
+                              print(f"Kahve/Bagis metodu kapatildi ({n}): {p}")
                           for idx, line in enumerate(orig.splitlines(), 1):
-                              if key_ref_pat.search(line) and len(hits) < 40:
-                                  hits.append(f"{p}:{idx}: {line.strip()[:140]}")
-                      elif fn.endswith(".xml") and "menu" in dp:
+                              if coffee_ref_pat.search(line) and len(coffee_hits) < 60:
+                                  coffee_hits.append(f"{p}:{idx}: {line.strip()[:140]}")
+                              if addon_pat.search(line) and len(addon_hits) < 60:
+                                  addon_hits.append(f"{p}:{idx}: {line.strip()[:140]}")
+                      elif fn.endswith(".xml") and ("menu" in dp or "xml" in dp):
                           orig = open(p, encoding="utf-8", errors="ignore").read()
-                          new_txt = menu_pat.sub(patch_menu_item, orig)
+                          def hide_tag(m):
+                              tag = m.group(0)
+                              if coffee_ref_pat.search(tag) and 'visible="false"' not in tag:
+                                  attr = ' app:isPreferenceVisible="false"' if 'Preference' in tag else ' android:visible="false"'
+                                  return tag[:-2] + attr + ' />' if tag.endswith('/>') else tag[:-1] + attr + '>'
+                              return tag
+                          new_txt = re.sub(r'<(?:item|Preference|SwitchPreferenceCompat)\b[^>]*>', hide_tag, orig, flags=re.DOTALL)
                           if new_txt != orig:
                               open(p, "w", encoding="utf-8").write(new_txt)
-                              patched_files += 1
-                              print(f"Menu gizlendi: {p}")
+                              print(f"XML ogesi gizlendi: {p}")
 
-          print(f"Toplam yamalanan dosya: {patched_files}")
-          if hits:
-              print("--- Kod icindeki referanslar (kontrol icin) ---")
-              for h in hits:
-                  print(h)
+          print("=== KAHVE / BAGIS KOD SATIRLARI ===")
+          for h in coffee_hits:
+              print(h)
+          print("=== AUDIOBOOK / STREMIO / TIKTOK KOD SATIRLARI ===")
+          for h in addon_hits:
+              print(h)
           PY
 
       - name: Build Auto Release Bundle (AAB)
@@ -158,7 +334,6 @@ jobs:
             find . -name "*.aab"
             exit 1
           fi
-          echo "Bulunan AAB: $AAB_PATH"
 
           python3 - <<'PY'
           import json, os, urllib.request
@@ -166,35 +341,34 @@ jobs:
               "https://api.github.com/repos/google/bundletool/releases/latest",
               headers={
                   "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-                  "User-Agent": "FermataX-Builder"
+                  "User-Agent": "ANKA-RA-Builder"
               }
           )
           data = json.loads(urllib.request.urlopen(req).read().decode())
           url = next(a["browser_download_url"] for a in data["assets"] if a["name"].endswith(".jar"))
-          print("bundletool indiriliyor:", url)
           urllib.request.urlretrieve(url, os.path.join(os.environ["RUNNER_TEMP"], "bundletool.jar"))
           PY
 
           mkdir -p signed-apks
           java -jar "$RUNNER_TEMP/bundletool.jar" build-apks \
             --bundle="$AAB_PATH" \
-            --output="$RUNNER_TEMP/fermata.apks" \
+            --output="$RUNNER_TEMP/anka_ra.apks" \
             --mode=universal \
             --ks="$KS_PATH" \
             --ks-pass="pass:$KS_PASS" \
             --ks-key-alias="$K_ALIAS" \
             --key-pass="pass:$KS_PASS"
 
-          unzip -o "$RUNNER_TEMP/fermata.apks" universal.apk -d "$RUNNER_TEMP"
-          mv "$RUNNER_TEMP/universal.apk" "signed-apks/fermataX-auto-universal-signed.apk"
+          unzip -o "$RUNNER_TEMP/anka_ra.apks" universal.apk -d "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/universal.apk" "signed-apks/ANKA_RA-auto-universal-signed.apk"
 
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
-          "$BUILD_TOOLS/apksigner" verify "signed-apks/fermataX-auto-universal-signed.apk"
-          ls -lh "signed-apks/fermataX-auto-universal-signed.apk"
+          "$BUILD_TOOLS/apksigner" verify "signed-apks/ANKA_RA-auto-universal-signed.apk"
+          ls -lh "signed-apks/ANKA_RA-auto-universal-signed.apk"
 
       - name: Upload Single Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: fermataX-auto-universal-apk
-          path: signed-apks/fermataX-auto-universal-signed.apk
+          name: ANKA_RA-auto-universal-apk
+          path: signed-apks/ANKA_RA-auto-universal-signed.apk
           retention-days: 30
