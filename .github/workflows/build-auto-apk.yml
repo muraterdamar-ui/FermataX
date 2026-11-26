@@ -47,7 +47,7 @@ jobs:
 
           python3 -c 'p="settings.gradle"; s=open(p).read(); t="!gradle.ext.approvedUploadCertificatesSha256.contains(fingerprint)"; assert t in s, "Hedef satir bulunamadi"; open(p,"w").write(s.replace(t,"false && "+t,1)); print("OK: sertifika kilidi acildi")'
 
-      - name: Build Auto Release APK
+      - name: Build Auto Release Bundle (AAB)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -61,48 +61,63 @@ jobs:
           FERMATAX_KEY_ALIAS: fermata
           FERMATAX_ALIAS: fermata
           FERMATAX_KEY_PASSWORD: FermataHacim2026
-        run: ./gradlew assembleAutoRelease --no-daemon
+        run: ./gradlew :fermata:bundleAutoRelease --no-daemon
 
-      - name: Collect Signed APKs
+      - name: Build Single Signed Universal APK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           KS_PATH="$RUNNER_TEMP/release.jks"
           KS_PASS="FermataHacim2026"
           K_ALIAS="fermata"
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
-          mkdir -p signed-apks
 
-          FOUND=0
-          while IFS= read -r apk; do
-            FOUND=1
-            base=$(basename "$apk" .apk)
-            signed="signed-apks/${base}-signed.apk"
-            if "$BUILD_TOOLS/apksigner" verify "$apk" >/dev/null 2>&1; then
-              cp "$apk" "$signed"
-            else
-              aligned="$RUNNER_TEMP/${base}-aligned.apk"
-              "$BUILD_TOOLS/zipalign" -f -p 4 "$apk" "$aligned"
-              "$BUILD_TOOLS/apksigner" sign \
-                --ks "$KS_PATH" \
-                --ks-key-alias "$K_ALIAS" \
-                --ks-pass "pass:$KS_PASS" \
-                --key-pass "pass:$KS_PASS" \
-                --out "$signed" \
-                "$aligned"
-              "$BUILD_TOOLS/apksigner" verify "$signed"
-            fi
-            echo "Hazir APK: $signed"
-          done < <(find . -path "*/outputs/apk/*" -name "*auto*release*.apk")
-
-          if [ "$FOUND" -eq 0 ]; then
-            echo "Hata: auto-release APK bulunamadi."
-            find . -name "*.apk"
+          AAB_PATH=$(find fermata/build/outputs/bundle -name "*.aab" | head -n 1)
+          if [ -z "$AAB_PATH" ]; then
+            AAB_PATH=$(find . -path "*/outputs/bundle/*" -name "*.aab" | head -n 1)
+          fi
+          if [ -z "$AAB_PATH" ]; then
+            echo "Hata: .aab dosyasi bulunamadi."
+            find . -name "*.aab"
             exit 1
           fi
+          echo "Bulunan AAB: $AAB_PATH"
 
-      - name: Upload Signed APKs
+          python3 - <<'PY'
+          import json, os, urllib.request
+          req = urllib.request.Request(
+              "https://api.github.com/repos/google/bundletool/releases/latest",
+              headers={
+                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                  "User-Agent": "FermataX-Builder"
+              }
+          )
+          data = json.loads(urllib.request.urlopen(req).read().decode())
+          url = next(a["browser_download_url"] for a in data["assets"] if a["name"].endswith(".jar"))
+          print("bundletool indiriliyor:", url)
+          urllib.request.urlretrieve(url, os.path.join(os.environ["RUNNER_TEMP"], "bundletool.jar"))
+          PY
+
+          mkdir -p signed-apks
+          java -jar "$RUNNER_TEMP/bundletool.jar" build-apks \
+            --bundle="$AAB_PATH" \
+            --output="$RUNNER_TEMP/fermata.apks" \
+            --mode=universal \
+            --ks="$KS_PATH" \
+            --ks-pass="pass:$KS_PASS" \
+            --ks-key-alias="$K_ALIAS" \
+            --key-pass="pass:$KS_PASS"
+
+          unzip -o "$RUNNER_TEMP/fermata.apks" universal.apk -d "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/universal.apk" "signed-apks/fermataX-auto-universal-signed.apk"
+
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify "signed-apks/fermataX-auto-universal-signed.apk"
+          ls -lh "signed-apks/fermataX-auto-universal-signed.apk"
+
+      - name: Upload Single Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: fermata-auto-signed-apks
-          path: signed-apks/*.apk
+          name: fermataX-auto-universal-apk
+          path: signed-apks/fermataX-auto-universal-signed.apk
           retention-days: 30
