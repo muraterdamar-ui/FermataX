@@ -51,10 +51,11 @@ jobs:
 
           python3 -c 'p="settings.gradle"; s=open(p).read(); t="!gradle.ext.approvedUploadCertificatesSha256.contains(fingerprint)"; assert t in s, "Hedef satir bulunamadi"; open(p,"w").write(s.replace(t,"false && "+t,1)); print("OK: sertifika kilidi acildi")'
 
-      - name: Apply ANKA_RA Name, Logo & Remove All Coffee Prompts
+      - name: Apply ANKA_RA Modern Glass UI, Logo, Clean Addons & Hacim Assistant
         run: |
           python3 - <<'PY'
-          import os, re, glob, io, base64, subprocess
+          import os, re, glob, io, base64
+          import xml.etree.ElementTree as ET
           from PIL import Image, ImageOps
 
           try:
@@ -64,6 +65,7 @@ jobs:
               pass
 
           APP_NAME = "ANKA_RA"
+
           EMBEDDED_LOGO_B64 = """
           UklGRqgeAABXRUJQVlA4IJweAABwcgCdASoAAQABPmEukkakIqGhJ5c6eIAMCWZu3Vz5sd3cYn/dec/X37t/cf7t/qPXn/t/Ofor
           /a/bl77fkX6N/u/77+R/zt9DHmB/qx+yPrS/tV7lfMF+2n7d+7X/wvUf/Yv89+xX+c+QD+Xf2//qdgd+7nsBftp6v//G/bT4MP63
@@ -172,30 +174,316 @@ jobs:
           PpnlXaL5HIizf5jU4lFfTQ+Dp8aeFh3xNYF+Vif5DyqXiIAOuE0hqChifGG2E0JJCKuRXI4AAAA=
           """
 
+          HACIM_JAVA_B64 = """
+          cGFja2FnZSBtZS5hYXAuZmVybWF0YS5oYWNpbTsKCmltcG9ydCBhbmRyb2lkLk1hbmlmZXN0OwppbXBvcnQgYW5kcm9pZC5jb250
+          ZW50LkNvbnRleHQ7CmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuSW50ZW50OwppbXBvcnQgYW5kcm9pZC5jb250ZW50LlNoYXJlZFBy
+          ZWZlcmVuY2VzOwppbXBvcnQgYW5kcm9pZC5jb250ZW50LnBtLlBhY2thZ2VNYW5hZ2VyOwppbXBvcnQgYW5kcm9pZC5sb2NhdGlv
+          bi5Mb2NhdGlvbjsKaW1wb3J0IGFuZHJvaWQubG9jYXRpb24uTG9jYXRpb25NYW5hZ2VyOwppbXBvcnQgYW5kcm9pZC5tZWRpYS5B
+          dWRpb0F0dHJpYnV0ZXM7CmltcG9ydCBhbmRyb2lkLm1lZGlhLkF1ZGlvRm9jdXNSZXF1ZXN0OwppbXBvcnQgYW5kcm9pZC5tZWRp
+          YS5BdWRpb01hbmFnZXI7CmltcG9ydCBhbmRyb2lkLm5ldC5Vcmk7CmltcG9ydCBhbmRyb2lkLm9zLkJ1aWxkOwppbXBvcnQgYW5k
+          cm9pZC5vcy5CdW5kbGU7CmltcG9ydCBhbmRyb2lkLm9zLkhhbmRsZXI7CmltcG9ydCBhbmRyb2lkLm9zLkxvb3BlcjsKaW1wb3J0
+          IGFuZHJvaWQuc3BlZWNoLlJlY29nbml0aW9uTGlzdGVuZXI7CmltcG9ydCBhbmRyb2lkLnNwZWVjaC5SZWNvZ25pemVySW50ZW50
+          OwppbXBvcnQgYW5kcm9pZC5zcGVlY2guU3BlZWNoUmVjb2duaXplcjsKaW1wb3J0IGFuZHJvaWQuc3BlZWNoLnR0cy5UZXh0VG9T
+          cGVlY2g7CmltcG9ydCBhbmRyb2lkLnNwZWVjaC50dHMuVXR0ZXJhbmNlUHJvZ3Jlc3NMaXN0ZW5lcjsKaW1wb3J0IGFuZHJvaWQu
+          c3BlZWNoLnR0cy5Wb2ljZTsKCmltcG9ydCBqYXZhLnV0aWwuQXJyYXlMaXN0OwppbXBvcnQgamF2YS51dGlsLkxpc3Q7CmltcG9y
+          dCBqYXZhLnV0aWwuTG9jYWxlOwppbXBvcnQgamF2YS51dGlsLlNldDsKCi8qKgogKiBBTktBX1JBIC0gSGFjaW0gU2VzbGkgQXNp
+          c3RhbmkKICogLSBTZXMgdmVyaXNpIGhpY2JpciB6YW1hbiBkaXNrZSB5YXppbG1heiAoeWFsbml6Y2EgUkFNIC8gYmVsbGVrIGlj
+          aSkuCiAqIC0gSGFyaWNpIGt1dHVwaGFuZSBiYWdpbWxpbGlnaSB5b2t0dXIgKHNhZiBBbmRyb2lkIFNESykuCiAqLwpwdWJsaWMg
+          Y2xhc3MgSGFjaW1Bc3Npc3RhbnQgewoKICAgIHB1YmxpYyBpbnRlcmZhY2UgQWN0aW9uTGlzdGVuZXIgewogICAgICAgIHZvaWQg
+          b25PcGVuUmFkaW8oKTsKICAgICAgICB2b2lkIG9uT3BlbkxvY2FsTXVzaWMoKTsKICAgICAgICB2b2lkIG9uT3BlbllvdVR1YmVN
+          dXNpYygpOwogICAgfQoKICAgIHB1YmxpYyBlbnVtIFZvaWNlT3B0aW9uIHsKICAgICAgICBFTVJFKCJFbXJlIChFcmtlayAtIERv
+          Z2FsKSIsIHRydWUsIDAuOTZmLCAwKSwKICAgICAgICBLQUFOKCJLYWFuIChFcmtlayAtIEdlbmMpIiwgdHJ1ZSwgMS4wNWYsIDEp
+          LAogICAgICAgIENBTigiQ2FuIChFcmtlayAtIE5ldCkiLCB0cnVlLCAwLjg4ZiwgMiksCiAgICAgICAgRUxJRigiRWxpZiAoS2Fk
+          aW4gLSBEb2dhbCkiLCBmYWxzZSwgMS4wMGYsIDApLAogICAgICAgIFpFWU5FUCgiWmV5bmVwIChLYWRpbiAtIFNpY2FrKSIsIGZh
+          bHNlLCAwLjk0ZiwgMSksCiAgICAgICAgREVGTkUoIkRlZm5lIChLYWRpbiAtIE5ldCkiLCBmYWxzZSwgMS4wNmYsIDIpOwoKICAg
+          ICAgICBwdWJsaWMgZmluYWwgU3RyaW5nIGxhYmVsOwogICAgICAgIHB1YmxpYyBmaW5hbCBib29sZWFuIG1hbGU7CiAgICAgICAg
+          cHVibGljIGZpbmFsIGZsb2F0IHBpdGNoOwogICAgICAgIHB1YmxpYyBmaW5hbCBpbnQgdmFyaWFudEluZGV4OwoKICAgICAgICBW
+          b2ljZU9wdGlvbihTdHJpbmcgbGFiZWwsIGJvb2xlYW4gbWFsZSwgZmxvYXQgcGl0Y2gsIGludCB2YXJpYW50SW5kZXgpIHsKICAg
+          ICAgICAgICAgdGhpcy5sYWJlbCA9IGxhYmVsOwogICAgICAgICAgICB0aGlzLm1hbGUgPSBtYWxlOwogICAgICAgICAgICB0aGlz
+          LnBpdGNoID0gcGl0Y2g7CiAgICAgICAgICAgIHRoaXMudmFyaWFudEluZGV4ID0gdmFyaWFudEluZGV4OwogICAgICAgIH0KICAg
+          IH0KCiAgICBwdWJsaWMgZW51bSBTdGF0ZSB7CiAgICAgICAgSURMRSwKICAgICAgICBXQUlUSU5HX05BTUUsCiAgICAgICAgV0FJ
+          VElOR19ERVNULAogICAgICAgIFdBSVRJTkdfTVVTSUNfWUVTLAogICAgICAgIFdBSVRJTkdfTVVTSUNfU09VUkNFCiAgICB9Cgog
+          ICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgU3RyaW5nIFBSRUZTID0gImhhY2ltX3ByZWZzIjsKICAgIHByaXZhdGUgc3RhdGljIGZp
+          bmFsIFN0cmluZyBLRVlfQVNTSVNUQU5UX05BTUUgPSAiYXNzaXN0YW50X25hbWUiOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwg
+          U3RyaW5nIEtFWV9VU0VSX1RJVExFID0gInVzZXJfdGl0bGUiOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgU3RyaW5nIEtFWV9W
+          T0lDRSA9ICJ2b2ljZV9pZCI7CiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBTdHJpbmcgS0VZX0ZJUlNUX1JVTiA9ICJmaXJzdF9y
+          dW4iOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgU3RyaW5nIEtFWV9QQVJLX0xBVCA9ICJwYXJrX2xhdCI7CiAgICBwcml2YXRl
+          IHN0YXRpYyBmaW5hbCBTdHJpbmcgS0VZX1BBUktfTE9OID0gInBhcmtfbG9uIjsKCiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBT
+          dHJpbmcgVVRURVJBTkNFX0xJU1RFTl9BRlRFUiA9ICJoYWNpbV9saXN0ZW5fIjsKICAgIHByaXZhdGUgc3RhdGljIGZpbmFsIFN0
+          cmluZyBVVFRFUkFOQ0VfRE9ORSA9ICJoYWNpbV9kb25lXyI7CgogICAgcHJpdmF0ZSBmaW5hbCBDb250ZXh0IGNvbnRleHQ7CiAg
+          ICBwcml2YXRlIGZpbmFsIFNoYXJlZFByZWZlcmVuY2VzIHByZWZzOwogICAgcHJpdmF0ZSBmaW5hbCBIYW5kbGVyIG1haW5IYW5k
+          bGVyID0gbmV3IEhhbmRsZXIoTG9vcGVyLmdldE1haW5Mb29wZXIoKSk7CiAgICBwcml2YXRlIGZpbmFsIEF1ZGlvTWFuYWdlciBh
+          dWRpb01hbmFnZXI7CiAgICBwcml2YXRlIEFjdGlvbkxpc3RlbmVyIGFjdGlvbkxpc3RlbmVyOwoKICAgIHByaXZhdGUgVGV4dFRv
+          U3BlZWNoIHR0czsKICAgIHByaXZhdGUgU3BlZWNoUmVjb2duaXplciBzcGVlY2hSZWNvZ25pemVyOwogICAgcHJpdmF0ZSBBdWRp
+          b0ZvY3VzUmVxdWVzdCBmb2N1c1JlcXVlc3Q7CgogICAgcHJpdmF0ZSBTdHJpbmcgYXNzaXN0YW50TmFtZSA9ICJIYWPEsW0iOwog
+          ICAgcHJpdmF0ZSBTdHJpbmcgdXNlclRpdGxlID0gInNhaGlwIjsKICAgIHByaXZhdGUgVm9pY2VPcHRpb24gY3VycmVudFZvaWNl
+          ID0gVm9pY2VPcHRpb24uRU1SRTsKICAgIHByaXZhdGUgU3RhdGUgc3RhdGUgPSBTdGF0ZS5JRExFOwogICAgcHJpdmF0ZSBib29s
+          ZWFuIHR0c1JlYWR5ID0gZmFsc2U7CgogICAgcHVibGljIEhhY2ltQXNzaXN0YW50KENvbnRleHQgY3R4LCBBY3Rpb25MaXN0ZW5l
+          ciBsaXN0ZW5lcikgewogICAgICAgIHRoaXMuY29udGV4dCA9IGN0eC5nZXRBcHBsaWNhdGlvbkNvbnRleHQoKTsKICAgICAgICB0
+          aGlzLmFjdGlvbkxpc3RlbmVyID0gbGlzdGVuZXI7CiAgICAgICAgdGhpcy5wcmVmcyA9IGNvbnRleHQuZ2V0U2hhcmVkUHJlZmVy
+          ZW5jZXMoUFJFRlMsIENvbnRleHQuTU9ERV9QUklWQVRFKTsKICAgICAgICB0aGlzLmF1ZGlvTWFuYWdlciA9IChBdWRpb01hbmFn
+          ZXIpIGNvbnRleHQuZ2V0U3lzdGVtU2VydmljZShDb250ZXh0LkFVRElPX1NFUlZJQ0UpOwogICAgICAgIGxvYWRQcmVmcygpOwog
+          ICAgICAgIGluaXRUdHMoKTsKICAgIH0KCiAgICBwdWJsaWMgdm9pZCBzZXRBY3Rpb25MaXN0ZW5lcihBY3Rpb25MaXN0ZW5lciBs
+          aXN0ZW5lcikgewogICAgICAgIHRoaXMuYWN0aW9uTGlzdGVuZXIgPSBsaXN0ZW5lcjsKICAgIH0KCiAgICBwcml2YXRlIGJvb2xl
+          YW4gaGFzUGVybWlzc2lvbihTdHJpbmcgcGVybSkgewogICAgICAgIGlmIChCdWlsZC5WRVJTSU9OLlNES19JTlQgPCBCdWlsZC5W
+          RVJTSU9OX0NPREVTLk0pIHJldHVybiB0cnVlOwogICAgICAgIHJldHVybiBjb250ZXh0LmNoZWNrU2VsZlBlcm1pc3Npb24ocGVy
+          bSkgPT0gUGFja2FnZU1hbmFnZXIuUEVSTUlTU0lPTl9HUkFOVEVEOwogICAgfQoKICAgIHByaXZhdGUgdm9pZCBsb2FkUHJlZnMo
+          KSB7CiAgICAgICAgYXNzaXN0YW50TmFtZSA9IHByZWZzLmdldFN0cmluZyhLRVlfQVNTSVNUQU5UX05BTUUsICJIYWPEsW0iKTsK
+          ICAgICAgICB1c2VyVGl0bGUgPSBwcmVmcy5nZXRTdHJpbmcoS0VZX1VTRVJfVElUTEUsICJzYWhpcCIpOwogICAgICAgIFN0cmlu
+          ZyB2b2ljZU5hbWUgPSBwcmVmcy5nZXRTdHJpbmcoS0VZX1ZPSUNFLCBWb2ljZU9wdGlvbi5FTVJFLm5hbWUoKSk7CiAgICAgICAg
+          dHJ5IHsKICAgICAgICAgICAgY3VycmVudFZvaWNlID0gVm9pY2VPcHRpb24udmFsdWVPZih2b2ljZU5hbWUpOwogICAgICAgIH0g
+          Y2F0Y2ggKEV4Y2VwdGlvbiBpZ25vcmVkKSB7fQogICAgfQoKICAgIHByaXZhdGUgdm9pZCBpbml0VHRzKCkgewogICAgICAgIHR0
+          cyA9IG5ldyBUZXh0VG9TcGVlY2goY29udGV4dCwgc3RhdHVzIC0+IHsKICAgICAgICAgICAgaWYgKHN0YXR1cyA9PSBUZXh0VG9T
+          cGVlY2guU1VDQ0VTUykgewogICAgICAgICAgICAgICAgdHRzUmVhZHkgPSB0cnVlOwogICAgICAgICAgICAgICAgdHRzLnNldExh
+          bmd1YWdlKExvY2FsZS5mb3JMYW5ndWFnZVRhZygidHItVFIiKSk7CiAgICAgICAgICAgICAgICBhcHBseVZvaWNlKGN1cnJlbnRW
+          b2ljZSk7CiAgICAgICAgICAgICAgICBzZXR1cFV0dGVyYW5jZUxpc3RlbmVyKCk7CiAgICAgICAgICAgIH0KICAgICAgICB9LCAi
+          Y29tLmdvb2dsZS5hbmRyb2lkLnR0cyIpOwogICAgfQoKICAgIHByaXZhdGUgdm9pZCBzZXR1cFV0dGVyYW5jZUxpc3RlbmVyKCkg
+          ewogICAgICAgIHR0cy5zZXRPblV0dGVyYW5jZVByb2dyZXNzTGlzdGVuZXIobmV3IFV0dGVyYW5jZVByb2dyZXNzTGlzdGVuZXIo
+          KSB7CiAgICAgICAgICAgIEBPdmVycmlkZSBwdWJsaWMgdm9pZCBvblN0YXJ0KFN0cmluZyB1dHRlcmFuY2VJZCkge30KCiAgICAg
+          ICAgICAgIEBPdmVycmlkZQogICAgICAgICAgICBwdWJsaWMgdm9pZCBvbkRvbmUoU3RyaW5nIHV0dGVyYW5jZUlkKSB7CiAgICAg
+          ICAgICAgICAgICBpZiAodXR0ZXJhbmNlSWQgIT0gbnVsbCAmJiB1dHRlcmFuY2VJZC5zdGFydHNXaXRoKFVUVEVSQU5DRV9MSVNU
+          RU5fQUZURVIpKSB7CiAgICAgICAgICAgICAgICAgICAgbWFpbkhhbmRsZXIucG9zdChIYWNpbUFzc2lzdGFudC50aGlzOjpzdGFy
+          dExpc3RlbmluZyk7CiAgICAgICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICAgIGFiYW5kb25BdWRpb0ZvY3Vz
+          KCk7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIEBPdmVycmlkZQogICAgICAgICAgICBwdWJs
+          aWMgdm9pZCBvbkVycm9yKFN0cmluZyB1dHRlcmFuY2VJZCkgewogICAgICAgICAgICAgICAgYWJhbmRvbkF1ZGlvRm9jdXMoKTsK
+          ICAgICAgICAgICAgfQogICAgICAgIH0pOwogICAgfQoKICAgIHByaXZhdGUgdm9pZCBhcHBseVZvaWNlKFZvaWNlT3B0aW9uIG9w
+          dGlvbikgewogICAgICAgIGlmICh0dHMgPT0gbnVsbCB8fCAhdHRzUmVhZHkpIHJldHVybjsKICAgICAgICBTZXQ8Vm9pY2U+IHZv
+          aWNlcyA9IHR0cy5nZXRWb2ljZXMoKTsKICAgICAgICBpZiAodm9pY2VzICE9IG51bGwpIHsKICAgICAgICAgICAgTGlzdDxWb2lj
+          ZT4gdHVya2lzaFZvaWNlcyA9IG5ldyBBcnJheUxpc3Q8PigpOwogICAgICAgICAgICBMaXN0PFZvaWNlPiBnZW5kZXJNYXRjaGVk
+          ID0gbmV3IEFycmF5TGlzdDw+KCk7CiAgICAgICAgICAgIGZvciAoVm9pY2UgdiA6IHZvaWNlcykgewogICAgICAgICAgICAgICAg
+          TG9jYWxlIGxvYyA9IHYuZ2V0TG9jYWxlKCk7CiAgICAgICAgICAgICAgICBpZiAobG9jID09IG51bGwgfHwgISJ0ciIuZXF1YWxz
+          SWdub3JlQ2FzZShsb2MuZ2V0TGFuZ3VhZ2UoKSkpIGNvbnRpbnVlOwogICAgICAgICAgICAgICAgdHVya2lzaFZvaWNlcy5hZGQo
+          dik7CiAgICAgICAgICAgICAgICBTdHJpbmcgbiA9IHYuZ2V0TmFtZSgpLnRvTG93ZXJDYXNlKExvY2FsZS5ST09UKTsKICAgICAg
+          ICAgICAgICAgIGJvb2xlYW4gbG9va3NNYWxlID0gbi5jb250YWlucygibWFsZSIpIHx8IG4uY29udGFpbnMoIm1mbSIpIHx8IG4u
+          Y29udGFpbnMoInRtYyIpOwogICAgICAgICAgICAgICAgYm9vbGVhbiBsb29rc0ZlbWFsZSA9IG4uY29udGFpbnMoImZlbWFsZSIp
+          IHx8IG4uY29udGFpbnMoImFtYSIpIHx8IG4uY29udGFpbnMoImVmdSIpOwogICAgICAgICAgICAgICAgaWYgKG9wdGlvbi5tYWxl
+          ICYmIGxvb2tzTWFsZSkgZ2VuZGVyTWF0Y2hlZC5hZGQodik7CiAgICAgICAgICAgICAgICBlbHNlIGlmICghb3B0aW9uLm1hbGUg
+          JiYgbG9va3NGZW1hbGUpIGdlbmRlck1hdGNoZWQuYWRkKHYpOwogICAgICAgICAgICB9CiAgICAgICAgICAgIExpc3Q8Vm9pY2U+
+          IHBvb2wgPSAhZ2VuZGVyTWF0Y2hlZC5pc0VtcHR5KCkgPyBnZW5kZXJNYXRjaGVkIDogdHVya2lzaFZvaWNlczsKICAgICAgICAg
+          ICAgaWYgKCFwb29sLmlzRW1wdHkoKSkgewogICAgICAgICAgICAgICAgdHRzLnNldFZvaWNlKHBvb2wuZ2V0KG9wdGlvbi52YXJp
+          YW50SW5kZXggJSBwb29sLnNpemUoKSkpOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIHR0cy5zZXRQaXRjaChvcHRp
+          b24ucGl0Y2gpOwogICAgICAgIHR0cy5zZXRTcGVlY2hSYXRlKDAuOTZmKTsKICAgIH0KCiAgICBwdWJsaWMgdm9pZCBzZXRWb2lj
+          ZShWb2ljZU9wdGlvbiBvcHRpb24pIHsKICAgICAgICBjdXJyZW50Vm9pY2UgPSBvcHRpb247CiAgICAgICAgcHJlZnMuZWRpdCgp
+          LnB1dFN0cmluZyhLRVlfVk9JQ0UsIG9wdGlvbi5uYW1lKCkpLmFwcGx5KCk7CiAgICAgICAgYXBwbHlWb2ljZShvcHRpb24pOwog
+          ICAgfQoKICAgIHB1YmxpYyB2b2lkIHNldEFzc2lzdGFudE5hbWUoU3RyaW5nIG5hbWUpIHsKICAgICAgICBpZiAobmFtZSA9PSBu
+          dWxsIHx8IG5hbWUudHJpbSgpLmlzRW1wdHkoKSkgcmV0dXJuOwogICAgICAgIGFzc2lzdGFudE5hbWUgPSBuYW1lLnRyaW0oKTsK
+          ICAgICAgICBwcmVmcy5lZGl0KCkKICAgICAgICAgICAgICAgIC5wdXRTdHJpbmcoS0VZX0FTU0lTVEFOVF9OQU1FLCBhc3Npc3Rh
+          bnROYW1lKQogICAgICAgICAgICAgICAgLnB1dEJvb2xlYW4oS0VZX0ZJUlNUX1JVTiwgZmFsc2UpCiAgICAgICAgICAgICAgICAu
+          YXBwbHkoKTsKICAgIH0KCiAgICBwdWJsaWMgYm9vbGVhbiBpc0ZpcnN0UnVuKCkgewogICAgICAgIHJldHVybiBwcmVmcy5nZXRC
+          b29sZWFuKEtFWV9GSVJTVF9SVU4sIHRydWUpOwogICAgfQoKICAgIHB1YmxpYyB2b2lkIG9uQW5kcm9pZEF1dG9Db25uZWN0ZWQo
+          KSB7CiAgICAgICAgaWYgKGlzRmlyc3RSdW4oKSkgewogICAgICAgICAgICBzdGF0ZSA9IFN0YXRlLldBSVRJTkdfTkFNRTsKICAg
+          ICAgICAgICAgc3BlYWsoIkJhbmEgbmFzxLFsIGhpdGFwIGV0bWVrIGlzdGVyc2luPyIsIHRydWUpOwogICAgICAgICAgICByZXR1
+          cm47CiAgICAgICAgfQogICAgICAgIHN0YXRlID0gU3RhdGUuV0FJVElOR19ERVNUOwogICAgICAgIHNwZWFrKCJIb8WfZ2VsZGlu
+          ICIgKyB1c2VyVGl0bGUgKyAiLCBuZXJleWUgZ2lkZWxpbT8iLCB0cnVlKTsKICAgIH0KCiAgICBwdWJsaWMgdm9pZCBvbkhvdHdv
+          cmREZXRlY3RlZCgpIHsKICAgICAgICBzdGF0ZSA9IFN0YXRlLklETEU7CiAgICAgICAgc3BlYWsoIkVmZW5kaW0iLCB0cnVlKTsK
+          ICAgIH0KCiAgICBwdWJsaWMgdm9pZCBzdGFydExpc3RlbmluZygpIHsKICAgICAgICBpZiAoIWhhc1Blcm1pc3Npb24oTWFuaWZl
+          c3QucGVybWlzc2lvbi5SRUNPUkRfQVVESU8pKSByZXR1cm47CiAgICAgICAgaWYgKCFTcGVlY2hSZWNvZ25pemVyLmlzUmVjb2du
+          aXRpb25BdmFpbGFibGUoY29udGV4dCkpIHJldHVybjsKCiAgICAgICAgcmVxdWVzdEF1ZGlvRm9jdXModHJ1ZSk7CiAgICAgICAg
+          aWYgKHNwZWVjaFJlY29nbml6ZXIgIT0gbnVsbCkgewogICAgICAgICAgICBzcGVlY2hSZWNvZ25pemVyLmRlc3Ryb3koKTsKICAg
+          ICAgICB9CiAgICAgICAgc3BlZWNoUmVjb2duaXplciA9IFNwZWVjaFJlY29nbml6ZXIuY3JlYXRlU3BlZWNoUmVjb2duaXplcihj
+          b250ZXh0KTsKICAgICAgICBzcGVlY2hSZWNvZ25pemVyLnNldFJlY29nbml0aW9uTGlzdGVuZXIobmV3IFJlY29nbml0aW9uTGlz
+          dGVuZXIoKSB7CiAgICAgICAgICAgIEBPdmVycmlkZSBwdWJsaWMgdm9pZCBvblJlYWR5Rm9yU3BlZWNoKEJ1bmRsZSBwYXJhbXMp
+          IHt9CiAgICAgICAgICAgIEBPdmVycmlkZSBwdWJsaWMgdm9pZCBvbkJlZ2lubmluZ09mU3BlZWNoKCkge30KICAgICAgICAgICAg
+          QE92ZXJyaWRlIHB1YmxpYyB2b2lkIG9uUm1zQ2hhbmdlZChmbG9hdCBybXNkQikge30KICAgICAgICAgICAgQE92ZXJyaWRlIHB1
+          YmxpYyB2b2lkIG9uQnVmZmVyUmVjZWl2ZWQoYnl0ZVtdIGJ1ZmZlcikge30KICAgICAgICAgICAgQE92ZXJyaWRlIHB1YmxpYyB2
+          b2lkIG9uRW5kT2ZTcGVlY2goKSB7fQogICAgICAgICAgICBAT3ZlcnJpZGUgcHVibGljIHZvaWQgb25QYXJ0aWFsUmVzdWx0cyhC
+          dW5kbGUgcGFydGlhbFJlc3VsdHMpIHt9CiAgICAgICAgICAgIEBPdmVycmlkZSBwdWJsaWMgdm9pZCBvbkV2ZW50KGludCBldmVu
+          dFR5cGUsIEJ1bmRsZSBwYXJhbXMpIHt9CiAgICAgICAgICAgIEBPdmVycmlkZSBwdWJsaWMgdm9pZCBvbkVycm9yKGludCBlcnJv
+          cikgeyBhYmFuZG9uQXVkaW9Gb2N1cygpOyB9CgogICAgICAgICAgICBAT3ZlcnJpZGUKICAgICAgICAgICAgcHVibGljIHZvaWQg
+          b25SZXN1bHRzKEJ1bmRsZSByZXN1bHRzKSB7CiAgICAgICAgICAgICAgICBBcnJheUxpc3Q8U3RyaW5nPiBtYXRjaGVzID0gcmVz
+          dWx0cy5nZXRTdHJpbmdBcnJheUxpc3QoU3BlZWNoUmVjb2duaXplci5SRVNVTFRTX1JFQ09HTklUSU9OKTsKICAgICAgICAgICAg
+          ICAgIGlmIChtYXRjaGVzICE9IG51bGwgJiYgIW1hdGNoZXMuaXNFbXB0eSgpKSB7CiAgICAgICAgICAgICAgICAgICAgb25TcGVl
+          Y2hSZXN1bHQobWF0Y2hlcy5nZXQoMCkpOwogICAgICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgICAgICBhYmFu
+          ZG9uQXVkaW9Gb2N1cygpOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgfSk7CgogICAgICAgIEludGVu
+          dCBpbnRlbnQgPSBuZXcgSW50ZW50KFJlY29nbml6ZXJJbnRlbnQuQUNUSU9OX1JFQ09HTklaRV9TUEVFQ0gpOwogICAgICAgIGlu
+          dGVudC5wdXRFeHRyYShSZWNvZ25pemVySW50ZW50LkVYVFJBX0xBTkdVQUdFX01PREVMLCBSZWNvZ25pemVySW50ZW50LkxBTkdV
+          QUdFX01PREVMX0ZSRUVfRk9STSk7CiAgICAgICAgaW50ZW50LnB1dEV4dHJhKFJlY29nbml6ZXJJbnRlbnQuRVhUUkFfTEFOR1VB
+          R0UsICJ0ci1UUiIpOwogICAgICAgIGludGVudC5wdXRFeHRyYShSZWNvZ25pemVySW50ZW50LkVYVFJBX1BSRUZFUl9PRkZMSU5F
+          LCB0cnVlKTsKICAgICAgICBpbnRlbnQucHV0RXh0cmEoUmVjb2duaXplckludGVudC5FWFRSQV9NQVhfUkVTVUxUUywgMSk7CiAg
+          ICAgICAgc3BlZWNoUmVjb2duaXplci5zdGFydExpc3RlbmluZyhpbnRlbnQpOwogICAgfQoKICAgIHB1YmxpYyB2b2lkIG9uU3Bl
+          ZWNoUmVzdWx0KFN0cmluZyB0ZXh0KSB7CiAgICAgICAgaWYgKHRleHQgPT0gbnVsbCkgcmV0dXJuOwogICAgICAgIExvY2FsZSB0
+          ciA9IExvY2FsZS5mb3JMYW5ndWFnZVRhZygidHIiKTsKICAgICAgICBTdHJpbmcgdCA9IHRleHQudG9Mb3dlckNhc2UodHIpLnRy
+          aW0oKTsKCiAgICAgICAgaWYgKHN0YXRlID09IFN0YXRlLldBSVRJTkdfTkFNRSkgewogICAgICAgICAgICBTdHJpbmcgY2xlYW5l
+          ZCA9IHQucmVwbGFjZSgic2FuYSIsICIiKQogICAgICAgICAgICAgICAgICAgIC5yZXBsYWNlKCJzZW5pIiwgIiIpCiAgICAgICAg
+          ICAgICAgICAgICAgLnJlcGxhY2UoImRpeWUiLCAiIikKICAgICAgICAgICAgICAgICAgICAucmVwbGFjZSgiaGl0YXAgZWRlY2XE
+          n2ltIiwgIiIpCiAgICAgICAgICAgICAgICAgICAgLnJlcGxhY2UoIm9sc3VuIiwgIiIpCiAgICAgICAgICAgICAgICAgICAgLnRy
+          aW0oKTsKICAgICAgICAgICAgaWYgKGNsZWFuZWQuaXNFbXB0eSgpKSBjbGVhbmVkID0gIkhhY8SxbSI7CiAgICAgICAgICAgIHNl
+          dEFzc2lzdGFudE5hbWUoY2xlYW5lZC5zdWJzdHJpbmcoMCwgMSkudG9VcHBlckNhc2UodHIpICsgY2xlYW5lZC5zdWJzdHJpbmco
+          MSkpOwogICAgICAgICAgICBzdGF0ZSA9IFN0YXRlLldBSVRJTkdfREVTVDsKICAgICAgICAgICAgc3BlYWsoIlRhbWFtLCBidW5k
+          YW4gc29ucmEgYWTEsW0gIiArIGFzc2lzdGFudE5hbWUgKyAiLiBOZXJleWUgZ2lkZWxpbT8iLCB0cnVlKTsKICAgICAgICAgICAg
+          cmV0dXJuOwogICAgICAgIH0KCiAgICAgICAgaWYgKHQuY29udGFpbnMoInBhcmsgeWVyaSIpIHx8IHQuY29udGFpbnMoImFyYWJh
+          bSBuZXJlZGUiKSkgewogICAgICAgICAgICBuYXZpZ2F0ZVRvU2F2ZWRQYXJraW5nKCk7CiAgICAgICAgICAgIHN0YXRlID0gU3Rh
+          dGUuSURMRTsKICAgICAgICAgICAgcmV0dXJuOwogICAgICAgIH0KCiAgICAgICAgaWYgKHN0YXRlID09IFN0YXRlLldBSVRJTkdf
+          REVTVCkgewogICAgICAgICAgICBpZiAodC5jb250YWlucygiZ2l0bWV5ZWxpbSIpIHx8IHQuY29udGFpbnMoImlwdGFsIikgfHwg
+          dC5jb250YWlucygiaGF5xLFyIikpIHsKICAgICAgICAgICAgICAgIHN0YXRlID0gU3RhdGUuV0FJVElOR19NVVNJQ19ZRVM7CiAg
+          ICAgICAgICAgICAgICBzcGVhaygiVGFtYW0uIE3DvHppayBkaW5sZW1layBpc3RlciBtaXNpbj8iLCB0cnVlKTsKICAgICAgICAg
+          ICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQogICAgICAgICAgICBpZiAodC5jb250YWlucygiZXYiKSkgbmF2aWdhdGUoIkV2
+          Iik7CiAgICAgICAgICAgIGVsc2UgaWYgKHQuY29udGFpbnMoImnFnyIpIHx8IHQuY29udGFpbnMoImlzIikpIG5hdmlnYXRlKCLE
+          sMWfIik7CiAgICAgICAgICAgIGVsc2UgaWYgKCF0LmlzRW1wdHkoKSkgbmF2aWdhdGUodGV4dC50cmltKCkpOwoKICAgICAgICAg
+          ICAgc3RhdGUgPSBTdGF0ZS5XQUlUSU5HX01VU0lDX1lFUzsKICAgICAgICAgICAgbWFpbkhhbmRsZXIucG9zdERlbGF5ZWQoKCkg
+          LT4gc3BlYWsoIk3DvHppayBkaW5sZW1layBpc3RlciBtaXNpbj8iLCB0cnVlKSwgMjIwMCk7CiAgICAgICAgICAgIHJldHVybjsK
+          ICAgICAgICB9CgogICAgICAgIGlmIChzdGF0ZSA9PSBTdGF0ZS5XQUlUSU5HX01VU0lDX1lFUykgewogICAgICAgICAgICBpZiAo
+          dC5jb250YWlucygiZXZldCIpIHx8IHQuY29udGFpbnMoIm9sdXIiKSB8fCB0LmNvbnRhaW5zKCJpc3RlcmltIikgfHwgdC5jb250
+          YWlucygiYcOnIikpIHsKICAgICAgICAgICAgICAgIHN0YXRlID0gU3RhdGUuV0FJVElOR19NVVNJQ19TT1VSQ0U7CiAgICAgICAg
+          ICAgICAgICBzcGVhaygiUmFkeW8gbXUsIHRlbGVmb25kYSBrYXnEsXRsxLEgbcSxLCBZb3VUdWJlIE11c2ljIG1pPyIsIHRydWUp
+          OwogICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgc3RhdGUgPSBTdGF0ZS5JRExFOwogICAgICAgICAgICAgICAg
+          c3BlYWsoIlRhbWFtLCBpeWkgeW9sY3VsdWtsYXIuIiwgZmFsc2UpOwogICAgICAgICAgICB9CiAgICAgICAgICAgIHJldHVybjsK
+          ICAgICAgICB9CgogICAgICAgIGlmIChzdGF0ZSA9PSBTdGF0ZS5XQUlUSU5HX01VU0lDX1NPVVJDRSkgewogICAgICAgICAgICBp
+          ZiAodC5jb250YWlucygicmFkeW8iKSkgb3BlblJhZGlvKCk7CiAgICAgICAgICAgIGVsc2UgaWYgKHQuY29udGFpbnMoInRlbGVm
+          b24iKSB8fCB0LmNvbnRhaW5zKCJrYXnEsXRsxLEiKSB8fCB0LmNvbnRhaW5zKCJ5ZXJlbCIpKSBvcGVuTG9jYWxNdXNpYygpOwog
+          ICAgICAgICAgICBlbHNlIGlmICh0LmNvbnRhaW5zKCJ5b3V0dWJlIikpIG9wZW5Zb3VUdWJlTXVzaWMoKTsKICAgICAgICAgICAg
+          ZWxzZSB7CiAgICAgICAgICAgICAgICBzcGVhaygiQW5sYW1hZMSxbS4gUmFkeW8sIHRlbGVmb25kYSBrYXnEsXRsxLEgdmV5YSBZ
+          b3VUdWJlIE11c2ljIGRpeWViaWxpcnNpbi4iLCB0cnVlKTsKICAgICAgICAgICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQog
+          ICAgICAgICAgICBzdGF0ZSA9IFN0YXRlLklETEU7CiAgICAgICAgICAgIHJldHVybjsKICAgICAgICB9CgogICAgICAgIGlmICh0
+          LmNvbnRhaW5zKGFzc2lzdGFudE5hbWUudG9Mb3dlckNhc2UodHIpKSB8fCB0LmNvbnRhaW5zKCJoYWPEsW0iKSB8fCB0LmNvbnRh
+          aW5zKCJoYWNpbSIpKSB7CiAgICAgICAgICAgIG9uSG90d29yZERldGVjdGVkKCk7CiAgICAgICAgfSBlbHNlIGlmICh0LmNvbnRh
+          aW5zKCJyYWR5byIpKSB7CiAgICAgICAgICAgIG9wZW5SYWRpbygpOwogICAgICAgIH0gZWxzZSBpZiAodC5jb250YWlucygieW91
+          dHViZSIpKSB7CiAgICAgICAgICAgIG9wZW5Zb3VUdWJlTXVzaWMoKTsKICAgICAgICB9IGVsc2UgaWYgKHQuY29udGFpbnMoIm3D
+          vHppayIpKSB7CiAgICAgICAgICAgIHN0YXRlID0gU3RhdGUuV0FJVElOR19NVVNJQ19TT1VSQ0U7CiAgICAgICAgICAgIHNwZWFr
+          KCJSYWR5byBtdSwgdGVsZWZvbmRhIGthecSxdGzEsSBtxLEsIFlvdVR1YmUgTXVzaWMgbWk/IiwgdHJ1ZSk7CiAgICAgICAgfSBl
+          bHNlIGlmICh0LmNvbnRhaW5zKCJnaXQiKSB8fCB0LmNvbnRhaW5zKCJyb3RhIikpIHsKICAgICAgICAgICAgbmF2aWdhdGUodGV4
+          dC5yZXBsYWNlKCJnaXQiLCAiIikucmVwbGFjZSgicm90YSIsICIiKS50cmltKCkpOwogICAgICAgIH0gZWxzZSB7CiAgICAgICAg
+          ICAgIGFiYW5kb25BdWRpb0ZvY3VzKCk7CiAgICAgICAgfQogICAgfQoKICAgIHB1YmxpYyB2b2lkIG9uQXJyaXZhbCgpIHsKICAg
+          ICAgICBzYXZlUGFya2luZ0xvY2F0aW9uKCk7CiAgICAgICAgc3RhdGUgPSBTdGF0ZS5JRExFOwogICAgICAgIHNwZWFrKCJQYXJr
+          IHllcmluaSBrYXlkZXR0aW0sIGhhZGkgZ8O2csO8xZ/DvHLDvHouIiwgZmFsc2UpOwogICAgfQoKICAgIEBTdXBwcmVzc1dhcm5p
+          bmdzKCJNaXNzaW5nUGVybWlzc2lvbiIpCiAgICBwcml2YXRlIHZvaWQgc2F2ZVBhcmtpbmdMb2NhdGlvbigpIHsKICAgICAgICBp
+          ZiAoIWhhc1Blcm1pc3Npb24oTWFuaWZlc3QucGVybWlzc2lvbi5BQ0NFU1NfRklORV9MT0NBVElPTikKICAgICAgICAgICAgICAg
+          ICYmICFoYXNQZXJtaXNzaW9uKE1hbmlmZXN0LnBlcm1pc3Npb24uQUNDRVNTX0NPQVJTRV9MT0NBVElPTikpIHsKICAgICAgICAg
+          ICAgcmV0dXJuOwogICAgICAgIH0KICAgICAgICBMb2NhdGlvbk1hbmFnZXIgbG0gPSAoTG9jYXRpb25NYW5hZ2VyKSBjb250ZXh0
+          LmdldFN5c3RlbVNlcnZpY2UoQ29udGV4dC5MT0NBVElPTl9TRVJWSUNFKTsKICAgICAgICBpZiAobG0gPT0gbnVsbCkgcmV0dXJu
+          OwogICAgICAgIExvY2F0aW9uIGJlc3QgPSBsbS5nZXRMYXN0S25vd25Mb2NhdGlvbihMb2NhdGlvbk1hbmFnZXIuR1BTX1BST1ZJ
+          REVSKTsKICAgICAgICBpZiAoYmVzdCA9PSBudWxsKSBiZXN0ID0gbG0uZ2V0TGFzdEtub3duTG9jYXRpb24oTG9jYXRpb25NYW5h
+          Z2VyLk5FVFdPUktfUFJPVklERVIpOwogICAgICAgIGlmIChiZXN0ICE9IG51bGwpIHsKICAgICAgICAgICAgcHJlZnMuZWRpdCgp
+          CiAgICAgICAgICAgICAgICAgICAgLnB1dFN0cmluZyhLRVlfUEFSS19MQVQsIFN0cmluZy52YWx1ZU9mKGJlc3QuZ2V0TGF0aXR1
+          ZGUoKSkpCiAgICAgICAgICAgICAgICAgICAgLnB1dFN0cmluZyhLRVlfUEFSS19MT04sIFN0cmluZy52YWx1ZU9mKGJlc3QuZ2V0
+          TG9uZ2l0dWRlKCkpKQogICAgICAgICAgICAgICAgICAgIC5hcHBseSgpOwogICAgICAgIH0KICAgIH0KCiAgICBwcml2YXRlIHZv
+          aWQgbmF2aWdhdGVUb1NhdmVkUGFya2luZygpIHsKICAgICAgICBTdHJpbmcgbGF0ID0gcHJlZnMuZ2V0U3RyaW5nKEtFWV9QQVJL
+          X0xBVCwgbnVsbCk7CiAgICAgICAgU3RyaW5nIGxvbiA9IHByZWZzLmdldFN0cmluZyhLRVlfUEFSS19MT04sIG51bGwpOwogICAg
+          ICAgIGlmIChsYXQgPT0gbnVsbCB8fCBsb24gPT0gbnVsbCkgewogICAgICAgICAgICBzcGVhaygiS2F5xLF0bMSxIGJpciBwYXJr
+          IHllcmkgYnVsYW1hZMSxbS4iLCBmYWxzZSk7CiAgICAgICAgICAgIHJldHVybjsKICAgICAgICB9CiAgICAgICAgbmF2aWdhdGUo
+          bGF0ICsgIiwiICsgbG9uKTsKICAgIH0KCiAgICBwcml2YXRlIHZvaWQgbmF2aWdhdGUoU3RyaW5nIHF1ZXJ5KSB7CiAgICAgICAg
+          c3BlYWsoIlJvdGEgw6dpemlsaXlvci4iLCBmYWxzZSk7CiAgICAgICAgVXJpIHVyaSA9IFVyaS5wYXJzZSgiZ29vZ2xlLm5hdmln
+          YXRpb246cT0iICsgVXJpLmVuY29kZShxdWVyeSkpOwogICAgICAgIEludGVudCBtYXBJbnRlbnQgPSBuZXcgSW50ZW50KEludGVu
+          dC5BQ1RJT05fVklFVywgdXJpKTsKICAgICAgICBtYXBJbnRlbnQuc2V0UGFja2FnZSgiY29tLmdvb2dsZS5hbmRyb2lkLmFwcHMu
+          bWFwcyIpOwogICAgICAgIG1hcEludGVudC5hZGRGbGFncyhJbnRlbnQuRkxBR19BQ1RJVklUWV9ORVdfVEFTSyk7CiAgICAgICAg
+          aWYgKG1hcEludGVudC5yZXNvbHZlQWN0aXZpdHkoY29udGV4dC5nZXRQYWNrYWdlTWFuYWdlcigpKSAhPSBudWxsKSB7CiAgICAg
+          ICAgICAgIGNvbnRleHQuc3RhcnRBY3Rpdml0eShtYXBJbnRlbnQpOwogICAgICAgIH0KICAgIH0KCiAgICBwcml2YXRlIHZvaWQg
+          b3BlblJhZGlvKCkgewogICAgICAgIHNwZWFrKCJSYWR5byBhw6fEsWzEsXlvci4iLCBmYWxzZSk7CiAgICAgICAgaWYgKGFjdGlv
+          bkxpc3RlbmVyICE9IG51bGwpIG1haW5IYW5kbGVyLnBvc3QoYWN0aW9uTGlzdGVuZXI6Om9uT3BlblJhZGlvKTsKICAgIH0KCiAg
+          ICBwcml2YXRlIHZvaWQgb3BlbkxvY2FsTXVzaWMoKSB7CiAgICAgICAgc3BlYWsoIlRlbGVmb25kYSBrYXnEsXRsxLEgbcO8emlr
+          bGVyIGHDp8SxbMSxeW9yLiIsIGZhbHNlKTsKICAgICAgICBpZiAoYWN0aW9uTGlzdGVuZXIgIT0gbnVsbCkgbWFpbkhhbmRsZXIu
+          cG9zdChhY3Rpb25MaXN0ZW5lcjo6b25PcGVuTG9jYWxNdXNpYyk7CiAgICB9CgogICAgcHJpdmF0ZSB2b2lkIG9wZW5Zb3VUdWJl
+          TXVzaWMoKSB7CiAgICAgICAgc3BlYWsoIllvdVR1YmUgTXVzaWMgYcOnxLFsxLF5b3IuIiwgZmFsc2UpOwogICAgICAgIGlmIChh
+          Y3Rpb25MaXN0ZW5lciAhPSBudWxsKSBtYWluSGFuZGxlci5wb3N0KGFjdGlvbkxpc3RlbmVyOjpvbk9wZW5Zb3VUdWJlTXVzaWMp
+          OwogICAgfQoKICAgIHB1YmxpYyB2b2lkIHNwZWFrKFN0cmluZyB0ZXh0LCBib29sZWFuIGxpc3RlbkFmdGVyKSB7CiAgICAgICAg
+          aWYgKHR0cyA9PSBudWxsIHx8ICF0dHNSZWFkeSkgcmV0dXJuOwogICAgICAgIHJlcXVlc3RBdWRpb0ZvY3VzKGZhbHNlKTsKICAg
+          ICAgICBTdHJpbmcgaWQgPSAobGlzdGVuQWZ0ZXIgPyBVVFRFUkFOQ0VfTElTVEVOX0FGVEVSIDogVVRURVJBTkNFX0RPTkUpICsg
+          U3lzdGVtLmN1cnJlbnRUaW1lTWlsbGlzKCk7CiAgICAgICAgdHRzLnNwZWFrKHRleHQsIFRleHRUb1NwZWVjaC5RVUVVRV9GTFVT
+          SCwgbnVsbCwgaWQpOwogICAgfQoKICAgIEBTdXBwcmVzc1dhcm5pbmdzKCJkZXByZWNhdGlvbiIpCiAgICBwcml2YXRlIHZvaWQg
+          cmVxdWVzdEF1ZGlvRm9jdXMoYm9vbGVhbiBleGNsdXNpdmUpIHsKICAgICAgICBpZiAoYXVkaW9NYW5hZ2VyID09IG51bGwpIHJl
+          dHVybjsKICAgICAgICBpbnQgZ2FpbiA9IGV4Y2x1c2l2ZQogICAgICAgICAgICAgICAgPyBBdWRpb01hbmFnZXIuQVVESU9GT0NV
+          U19HQUlOX1RSQU5TSUVOVF9FWENMVVNJVkUKICAgICAgICAgICAgICAgIDogQXVkaW9NYW5hZ2VyLkFVRElPRk9DVVNfR0FJTl9U
+          UkFOU0lFTlRfTUFZX0RVQ0s7CiAgICAgICAgaWYgKEJ1aWxkLlZFUlNJT04uU0RLX0lOVCA+PSBCdWlsZC5WRVJTSU9OX0NPREVT
+          Lk8pIHsKICAgICAgICAgICAgZm9jdXNSZXF1ZXN0ID0gbmV3IEF1ZGlvRm9jdXNSZXF1ZXN0LkJ1aWxkZXIoZ2FpbikKICAgICAg
+          ICAgICAgICAgICAgICAuc2V0QXVkaW9BdHRyaWJ1dGVzKG5ldyBBdWRpb0F0dHJpYnV0ZXMuQnVpbGRlcigpCiAgICAgICAgICAg
+          ICAgICAgICAgICAgICAgICAuc2V0VXNhZ2UoQXVkaW9BdHRyaWJ1dGVzLlVTQUdFX0FTU0lTVEFOVCkKICAgICAgICAgICAgICAg
+          ICAgICAgICAgICAgIC5zZXRDb250ZW50VHlwZShBdWRpb0F0dHJpYnV0ZXMuQ09OVEVOVF9UWVBFX1NQRUVDSCkKICAgICAgICAg
+          ICAgICAgICAgICAgICAgICAgIC5idWlsZCgpKQogICAgICAgICAgICAgICAgICAgIC5idWlsZCgpOwogICAgICAgICAgICBhdWRp
+          b01hbmFnZXIucmVxdWVzdEF1ZGlvRm9jdXMoZm9jdXNSZXF1ZXN0KTsKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBhdWRp
+          b01hbmFnZXIucmVxdWVzdEF1ZGlvRm9jdXMobnVsbCwgQXVkaW9NYW5hZ2VyLlNUUkVBTV9NVVNJQywgZ2Fpbik7CiAgICAgICAg
+          fQogICAgfQoKICAgIEBTdXBwcmVzc1dhcm5pbmdzKCJkZXByZWNhdGlvbiIpCiAgICBwcml2YXRlIHZvaWQgYWJhbmRvbkF1ZGlv
+          Rm9jdXMoKSB7CiAgICAgICAgaWYgKGF1ZGlvTWFuYWdlciA9PSBudWxsKSByZXR1cm47CiAgICAgICAgaWYgKEJ1aWxkLlZFUlNJ
+          T04uU0RLX0lOVCA+PSBCdWlsZC5WRVJTSU9OX0NPREVTLk8gJiYgZm9jdXNSZXF1ZXN0ICE9IG51bGwpIHsKICAgICAgICAgICAg
+          YXVkaW9NYW5hZ2VyLmFiYW5kb25BdWRpb0ZvY3VzUmVxdWVzdChmb2N1c1JlcXVlc3QpOwogICAgICAgIH0gZWxzZSB7CiAgICAg
+          ICAgICAgIGF1ZGlvTWFuYWdlci5hYmFuZG9uQXVkaW9Gb2N1cyhudWxsKTsKICAgICAgICB9CiAgICB9CgogICAgcHVibGljIFN0
+          cmluZyBnZXRBc3Npc3RhbnROYW1lKCkgeyByZXR1cm4gYXNzaXN0YW50TmFtZTsgfQogICAgcHVibGljIFZvaWNlT3B0aW9uIGdl
+          dEN1cnJlbnRWb2ljZSgpIHsgcmV0dXJuIGN1cnJlbnRWb2ljZTsgfQoKICAgIHB1YmxpYyB2b2lkIHNodXRkb3duKCkgewogICAg
+          ICAgIG1haW5IYW5kbGVyLnJlbW92ZUNhbGxiYWNrc0FuZE1lc3NhZ2VzKG51bGwpOwogICAgICAgIGlmIChzcGVlY2hSZWNvZ25p
+          emVyICE9IG51bGwpIHsKICAgICAgICAgICAgc3BlZWNoUmVjb2duaXplci5kZXN0cm95KCk7CiAgICAgICAgICAgIHNwZWVjaFJl
+          Y29nbml6ZXIgPSBudWxsOwogICAgICAgIH0KICAgICAgICBpZiAodHRzICE9IG51bGwpIHsKICAgICAgICAgICAgdHRzLnN0b3Ao
+          KTsKICAgICAgICAgICAgdHRzLnNodXRkb3duKCk7CiAgICAgICAgfQogICAgICAgIGFiYW5kb25BdWRpb0ZvY3VzKCk7CiAgICB9
+          Cn0K
+          """
+
+          FAV_JAVA_B64 = """
+          cGFja2FnZSBtZS5hYXAuZmVybWF0YS5oYWNpbTsKCmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGV4dDsKaW1wb3J0IGFuZHJv
+          aWQuY29udGVudC5TaGFyZWRQcmVmZXJlbmNlczsKaW1wb3J0IGphdmEudXRpbC5BcnJheUxpc3Q7CmltcG9ydCBqYXZhLnV0aWwu
+          SGFzaFNldDsKaW1wb3J0IGphdmEudXRpbC5MaXN0OwppbXBvcnQgamF2YS51dGlsLlNldDsKCi8qKgogKiBBTktBX1JBIEZhdm9y
+          aWxlciBZb25ldGljaXNpIC0gVFYgdmUgUmFkeW8KICovCnB1YmxpYyBjbGFzcyBGYXZvcml0ZXNNYW5hZ2VyIHsKICAgIHByaXZh
+          dGUgc3RhdGljIGZpbmFsIFN0cmluZyBQUkVGUyA9ICJoYWNpbV9mYXZvcml0ZXMiOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwg
+          U3RyaW5nIEtFWV9UViA9ICJmYXZfdHYiOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgU3RyaW5nIEtFWV9SQURJTyA9ICJmYXZf
+          cmFkaW8iOwoKICAgIHByaXZhdGUgZmluYWwgU2hhcmVkUHJlZmVyZW5jZXMgcHJlZnM7CgogICAgcHVibGljIEZhdm9yaXRlc01h
+          bmFnZXIoQ29udGV4dCBjdHgpIHsKICAgICAgICBwcmVmcyA9IGN0eC5nZXRBcHBsaWNhdGlvbkNvbnRleHQoKS5nZXRTaGFyZWRQ
+          cmVmZXJlbmNlcyhQUkVGUywgQ29udGV4dC5NT0RFX1BSSVZBVEUpOwogICAgfQoKICAgIHB1YmxpYyBib29sZWFuIGlzRmF2b3Jp
+          dGUoU3RyaW5nIHR5cGUsIFN0cmluZyBjaGFubmVsSWQpIHsKICAgICAgICByZXR1cm4gZ2V0U2V0KHR5cGUpLmNvbnRhaW5zKGNo
+          YW5uZWxJZCk7CiAgICB9CgogICAgcHVibGljIHZvaWQgdG9nZ2xlRmF2b3JpdGUoU3RyaW5nIHR5cGUsIFN0cmluZyBjaGFubmVs
+          SWQpIHsKICAgICAgICBTZXQ8U3RyaW5nPiBzZXQgPSBuZXcgSGFzaFNldDw+KGdldFNldCh0eXBlKSk7CiAgICAgICAgaWYgKHNl
+          dC5jb250YWlucyhjaGFubmVsSWQpKSBzZXQucmVtb3ZlKGNoYW5uZWxJZCk7CiAgICAgICAgZWxzZSBzZXQuYWRkKGNoYW5uZWxJ
+          ZCk7CiAgICAgICAgcHJlZnMuZWRpdCgpLnB1dFN0cmluZ1NldCgidHYiLmVxdWFscyh0eXBlKSA/IEtFWV9UViA6IEtFWV9SQURJ
+          Tywgc2V0KS5hcHBseSgpOwogICAgfQoKICAgIHB1YmxpYyBMaXN0PFN0cmluZz4gZ2V0RmF2b3JpdGVzKFN0cmluZyB0eXBlKSB7
+          CiAgICAgICAgcmV0dXJuIG5ldyBBcnJheUxpc3Q8PihnZXRTZXQodHlwZSkpOwogICAgfQoKICAgIHByaXZhdGUgU2V0PFN0cmlu
+          Zz4gZ2V0U2V0KFN0cmluZyB0eXBlKSB7CiAgICAgICAgU3RyaW5nIGtleSA9ICJ0diIuZXF1YWxzKHR5cGUpID8gS0VZX1RWIDog
+          S0VZX1JBRElPOwogICAgICAgIHJldHVybiBwcmVmcy5nZXRTdHJpbmdTZXQoa2V5LCBuZXcgSGFzaFNldDw+KCkpOwogICAgfQp9
+          Cg==
+          """
+
+          def safe_write_xml(path, new_txt, orig_txt):
+              if new_txt == orig_txt:
+                  return False
+              try:
+                  ET.fromstring(new_txt.encode("utf-8"))
+                  open(path, "w", encoding="utf-8").write(new_txt)
+                  return True
+              except Exception as e:
+                  print(f"XML dogrulama atladi ({path}): {e}")
+                  return False
+
           # =========================================================
-          # 1) UYGULAMA ADINI ANKA_RA YAP
+          # 1) UYGULAMA ADINI ANKA_RA YAP + TURKCE ARAYUZ ETIKETLERI
           # =========================================================
           app_key_pat = re.compile(
               r'(<string\b[^>]*\bname="(?:app_name|app_name_auto|app_name_auto_release|app_name_mobile|app_name_mobile_release|media_service_name|fermata_app_name|launcher_name)"[^>]*>)(.*?)(</string>)',
               re.DOTALL | re.IGNORECASE
           )
+          tr_exact_labels = {
+              "Open on car": "Araçta Aç",
+              "AA disconnected": "AA Bağlı Değil",
+              "AA connected": "AA Bağlı",
+              "Find Car": "Araç Bul",
+              "Addons": "ANKA_RA",
+              "Addon Module": "Medya Modülü",
+              "Local &amp; external storage": "Yerel ve harici depolama",
+              "Local & external storage": "Yerel ve harici depolama",
+              "Saved media collections": "Kayıtlı medya listeleri",
+              "Quick access starred tracks": "Yıldızlı hızlı erişim",
+              "Phone Apps": "Telefon Uygulamaları",
+          }
+
           name_patched = 0
           for dp, _, files in os.walk("fermata/src"):
-              if "/test" in dp.replace("\\", "/") or "/androidTest" in dp.replace("\\", "/"):
+              norm = dp.replace("\\", "/")
+              if "/test" in norm or "/androidTest" in norm:
                   continue
               for fn in files:
                   if fn.endswith(".xml") and "values" in dp:
                       p = os.path.join(dp, fn)
                       orig = open(p, encoding="utf-8", errors="ignore").read()
                       new_txt = app_key_pat.sub(r'\g<1>' + APP_NAME + r'\g<3>', orig)
-                      if new_txt != orig:
-                          open(p, "w", encoding="utf-8").write(new_txt)
+                      # Yalnizca temel/TR strings dosyalarinda UI etiketlerini Turkcelestir
+                      if os.path.basename(dp) in ("values", "values-tr"):
+                          for eng, tr_val in tr_exact_labels.items():
+                              new_txt = re.sub(
+                                  r'(<string\b[^>]*>)\s*' + re.escape(eng) + r'\s*(</string>)',
+                                  r'\g<1>' + tr_val + r'\g<2>',
+                                  new_txt
+                              )
+                      if safe_write_xml(p, new_txt, orig):
                           name_patched += 1
-                          print(f"Ad degistirildi: {p}")
-          print(f"Toplam XML ad yamasi: {name_patched} (Gradle -PAPP_NAME=ANKA_RA ile birlikte)")
+                          print(f"String yamalandi: {p}")
+          print(f"Toplam XML string yamasi: {name_patched}")
 
           # =========================================================
-          # 2) LOGOYU ANKA_RA YAP (Yuklu gorsel > 500B veya gomulu logo)
+          # 2) LOGOYU ANKA_RA YAP
           # =========================================================
           def load_logo():
               candidates = []
@@ -208,143 +496,200 @@ jobs:
                       continue
                   try:
                       im = Image.open(path).convert("RGBA")
-                      print(f"Repodan gecerli logo yuklendi: {path} ({im.size})")
+                      print(f"Repodan logo yuklendi: {path} ({im.size})")
                       return im
-                  except Exception as e:
-                      print(f"Repodaki {path} acilamadi: {e}")
-              if EMBEDDED_LOGO_B64.strip():
-                  raw = base64.b64decode("".join(EMBEDDED_LOGO_B64.split()))
-                  im = Image.open(io.BytesIO(raw)).convert("RGBA")
-                  print(f"Gomulu ANKA_RA logosu kullaniliyor ({im.size})")
-                  return im
-              return None
+                  except Exception:
+                      pass
+              raw = base64.b64decode("".join(EMBEDDED_LOGO_B64.split()))
+              im = Image.open(io.BytesIO(raw)).convert("RGBA")
+              print(f"Gomulu ANKA_RA logosu kullaniliyor ({im.size})")
+              return im
 
           img = load_logo()
-          if img is not None:
-              w, h = img.size
-              side = min(w, h)
-              img = ImageOps.fit(img, (side, side), method=Image.Resampling.LANCZOS)
+          w, h = img.size
+          side = min(w, h)
+          img = ImageOps.fit(img, (side, side), method=Image.Resampling.LANCZOS)
 
-              mipmap_icons = {"ic_launcher", "ic_launcher_round"}
-              drawable_icons = set()
-              for mf in glob.glob("fermata/src/**/AndroidManifest.xml", recursive=True):
-                  if "/test" in mf.replace("\\", "/"):
+          mipmap_icons = {"ic_launcher", "ic_launcher_round"}
+          drawable_icons = set()
+          for mf in glob.glob("fermata/src/**/AndroidManifest.xml", recursive=True):
+              if "/test" in mf.replace("\\", "/"):
+                  continue
+              mtxt = open(mf, encoding="utf-8", errors="ignore").read()
+              for m in re.finditer(r'android:(?:icon|roundIcon)="@(mipmap|drawable)/([^"]+)"', mtxt):
+                  (mipmap_icons if m.group(1) == "mipmap" else drawable_icons).add(m.group(2))
+
+          res_dirs = [d for d in ("fermata/src/main/res", "fermata/src/auto/res") if os.path.isdir(d)]
+          sizes = {"mipmap-mdpi": 48, "mipmap-hdpi": 72, "mipmap-xhdpi": 96, "mipmap-xxhdpi": 144, "mipmap-xxxhdpi": 192}
+          fg_sizes = {"mipmap-mdpi": 108, "mipmap-hdpi": 162, "mipmap-xhdpi": 216, "mipmap-xxhdpi": 324, "mipmap-xxxhdpi": 432}
+
+          for rdir in res_dirs:
+              for dp, _, files in os.walk(rdir):
+                  if not os.path.basename(dp).startswith("mipmap-"):
                       continue
-                  mtxt = open(mf, encoding="utf-8", errors="ignore").read()
-                  for m in re.finditer(r'android:(?:icon|roundIcon)="@(mipmap|drawable)/([^"]+)"', mtxt):
-                      if m.group(1) == "mipmap":
-                          mipmap_icons.add(m.group(2))
-                      else:
-                          drawable_icons.add(m.group(2))
-              print("Manifest mipmap ikonlari:", sorted(mipmap_icons))
-              print("Manifest drawable ikonlari:", sorted(drawable_icons))
-
-              res_dirs = [d for d in ("fermata/src/main/res", "fermata/src/auto/res") if os.path.isdir(d)]
-              sizes = {
-                  "mipmap-mdpi": 48,
-                  "mipmap-hdpi": 72,
-                  "mipmap-xhdpi": 96,
-                  "mipmap-xxhdpi": 144,
-                  "mipmap-xxxhdpi": 192,
-              }
-              fg_sizes = {
-                  "mipmap-mdpi": 108,
-                  "mipmap-hdpi": 162,
-                  "mipmap-xhdpi": 216,
-                  "mipmap-xxhdpi": 324,
-                  "mipmap-xxxhdpi": 432,
-              }
-
-              for rdir in res_dirs:
-                  for dp, _, files in os.walk(rdir):
-                      base = os.path.basename(dp)
-                      if not base.startswith("mipmap-"):
-                          continue
-                      for fn in files:
-                          stem = os.path.splitext(fn)[0]
-                          if stem in mipmap_icons or stem == "anka_ra_ic_fg":
-                              os.remove(os.path.join(dp, fn))
-
-                  for folder, px in sizes.items():
-                      out_dir = os.path.join(rdir, folder)
-                      os.makedirs(out_dir, exist_ok=True)
-                      resized = img.resize((px, px), Image.Resampling.LANCZOS)
-                      for iname in mipmap_icons:
-                          resized.save(os.path.join(out_dir, f"{iname}.png"))
-
-                  for folder, px in fg_sizes.items():
-                      out_dir = os.path.join(rdir, folder)
-                      os.makedirs(out_dir, exist_ok=True)
-                      canvas = Image.new("RGBA", (px, px), (5, 8, 16, 255))
-                      inner = int(px * 0.72)
-                      fg_icon = img.resize((inner, inner), Image.Resampling.LANCZOS)
-                      off = (px - inner) // 2
-                      canvas.paste(fg_icon, (off, off), fg_icon)
-                      canvas.save(os.path.join(out_dir, "anka_ra_ic_fg.png"))
-
-                  anydpi = os.path.join(rdir, "mipmap-anydpi-v26")
-                  os.makedirs(anydpi, exist_ok=True)
-                  adaptive_xml = (
-                      '<?xml version="1.0" encoding="utf-8"?>\n'
-                      '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-                      '    <background android:drawable="@color/anka_ra_icon_bg" />\n'
-                      '    <foreground android:drawable="@mipmap/anka_ra_ic_fg" />\n'
-                      '</adaptive-icon>\n'
-                  )
+                  for fn in files:
+                      stem = os.path.splitext(fn)[0]
+                      if stem in mipmap_icons or stem == "anka_ra_ic_fg":
+                          os.remove(os.path.join(dp, fn))
+              for folder, px in sizes.items():
+                  out_dir = os.path.join(rdir, folder)
+                  os.makedirs(out_dir, exist_ok=True)
+                  resized = img.resize((px, px), Image.Resampling.LANCZOS)
                   for iname in mipmap_icons:
-                      open(os.path.join(anydpi, f"{iname}.xml"), "w", encoding="utf-8").write(adaptive_xml)
-
-                  if drawable_icons:
-                      for dp, _, files in os.walk(rdir):
-                          base = os.path.basename(dp)
-                          if not base.startswith("drawable"):
-                              continue
-                          for fn in files:
-                              stem = os.path.splitext(fn)[0]
-                              if stem in drawable_icons:
-                                  os.remove(os.path.join(dp, fn))
-                                  print(f"Eski drawable ikon silindi: {os.path.join(dp, fn)}")
-                      d_out = os.path.join(rdir, "drawable-xxxhdpi")
-                      os.makedirs(d_out, exist_ok=True)
-                      d_img = img.resize((192, 192), Image.Resampling.LANCZOS)
-                      for dname in drawable_icons:
-                          d_img.save(os.path.join(d_out, f"{dname}.png"))
-
-                  val_dir = os.path.join(rdir, "values")
-                  os.makedirs(val_dir, exist_ok=True)
-                  open(os.path.join(val_dir, "anka_ra_colors.xml"), "w", encoding="utf-8").write(
-                      '<?xml version="1.0" encoding="utf-8"?>\n'
-                      '<resources>\n'
-                      '    <color name="anka_ra_icon_bg">#050810</color>\n'
-                      '</resources>\n'
-                  )
-              print("OK: ANKA_RA logosu tum cozunurluklere islendi.")
-          else:
-              print("UYARI: Gecerli logo bulunamadi! Repoya anka_ra_logo.png yukleyin.")
+                      resized.save(os.path.join(out_dir, f"{iname}.png"))
+              for folder, px in fg_sizes.items():
+                  out_dir = os.path.join(rdir, folder)
+                  os.makedirs(out_dir, exist_ok=True)
+                  canvas = Image.new("RGBA", (px, px), (6, 10, 20, 255))
+                  inner = int(px * 0.72)
+                  fg_icon = img.resize((inner, inner), Image.Resampling.LANCZOS)
+                  off = (px - inner) // 2
+                  canvas.paste(fg_icon, (off, off), fg_icon)
+                  canvas.save(os.path.join(out_dir, "anka_ra_ic_fg.png"))
+              anydpi = os.path.join(rdir, "mipmap-anydpi-v26")
+              os.makedirs(anydpi, exist_ok=True)
+              adaptive_xml = (
+                  '<?xml version="1.0" encoding="utf-8"?>\n'
+                  '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                  '    <background android:drawable="@color/anka_ra_icon_bg" />\n'
+                  '    <foreground android:drawable="@mipmap/anka_ra_ic_fg" />\n'
+                  '</adaptive-icon>\n'
+              )
+              for iname in mipmap_icons:
+                  open(os.path.join(anydpi, f"{iname}.xml"), "w", encoding="utf-8").write(adaptive_xml)
+              val_dir = os.path.join(rdir, "values")
+              os.makedirs(val_dir, exist_ok=True)
+              open(os.path.join(val_dir, "anka_ra_colors.xml"), "w", encoding="utf-8").write(
+                  '<?xml version="1.0" encoding="utf-8"?>\n'
+                  '<resources>\n'
+                  '    <color name="anka_ra_icon_bg">#060A14</color>\n'
+                  '    <color name="anka_ra_bg">#060A14</color>\n'
+                  '    <color name="anka_ra_surface">#10192C</color>\n'
+                  '    <color name="anka_ra_surface_elevated">#16233E</color>\n'
+                  '    <color name="anka_ra_cyan">#00C2FF</color>\n'
+                  '    <color name="anka_ra_crimson">#FF3D2E</color>\n'
+                  '    <color name="anka_ra_gold">#FBBF24</color>\n'
+                  '    <color name="anka_ra_glass_stroke">#4000C2FF</color>\n'
+                  '    <color name="anka_ra_text_primary">#F8FAFC</color>\n'
+                  '    <color name="anka_ra_text_secondary">#94A3B8</color>\n'
+                  '</resources>\n'
+              )
+          print("OK: ANKA_RA logosu ve renk paleti eklendi.")
 
           # =========================================================
-          # 3) KAHVE / KO-FI / BAGIS UYARISINI 3 KAYNAKTAN KALDIR
-          #    (SponsorBlock'a dokunmaz!)
+          # 3) ANKA_RA MODERN GLASS UI TEMA & DRAWABLE YENILEMESI
+          #    (Tum XML degisiklikleri ET.fromstring ile dogrulanir)
           # =========================================================
+          def remap_hex_color(name_l, hex_val):
+              raw = hex_val.lstrip("#")
+              if len(raw) == 6:
+                  alpha, rgb = "", raw.upper()
+              elif len(raw) == 8:
+                  alpha, rgb = raw[:2].upper(), raw[2:].upper()
+              else:
+                  return hex_val
+              # Saf beyaz veya seffaf/metin renklerini koru
+              if alpha in ("00",):
+                  return hex_val
+              if any(k in name_l for k in ("text", "title", "subtitle", "white", "black", "transparent", "error", "red", "green", "success", "warning")):
+                  return hex_val
+              # Arka plan -> Anka Gece #060A14
+              if any(k in name_l for k in ("window_bg", "windowbackground", "screen_bg", "root_bg", "canvas_bg", "scaffold", "bg_dark", "glass_bg", "background_dark", "dark_bg", "main_bg")):
+                  return "#" + alpha + "060A14"
+              # Kart / Panel / Bar / Nav yuzeyi -> Koyu Cam #10192C
+              if any(k in name_l for k in ("card_bg", "card_surface", "tile_bg", "panel_bg", "surface", "dock", "navbar", "nav_bg", "bottom_bar", "toolbar_bg", "header_bg", "sheet_bg", "player_bg")):
+                  return "#" + alpha + "10192C"
+              # Kenarlik / Stroke / Divider -> Ince Cam Mavi
+              if any(k in name_l for k in ("stroke", "border", "outline")):
+                  return "#4000C2FF" if alpha else "#1E3A5F"
+              # Vurgu / Accent / Active / Primary / Switch -> Anka Mavi #00C2FF
+              if any(k in name_l for k in ("accent", "primary", "active", "selected", "checked", "highlight", "cyan", "teal", "tint", "fab", "play_btn")):
+                  if "dark" in name_l or "bg" in name_l:
+                      return "#" + alpha + "0B1324"
+                  return "#" + alpha + "00C2FF"
+              # Favori / Yildiz -> Altin #FBBF24
+              if any(k in name_l for k in ("star", "favorite", "fav_")):
+                  return "#" + alpha + "FBBF24"
+              return hex_val
 
-          # 3A) PhoneSupportBannerController.java (4 saniyelik kahve banner uyarisi)
+          ui_color_files = 0
+          ui_drawable_files = 0
+          color_tag_pat = re.compile(r'(<color\s+name="([^"]+)"[^>]*>\s*)(#[0-9a-fA-F](6, 8))(\s*</color>)')
+
+          for rdir in res_dirs:
+              for dp, _, files in os.walk(rdir):
+                  bname = os.path.basename(dp)
+                  for fn in files:
+                      p = os.path.join(dp, fn)
+                      if not fn.endswith(".xml") or fn == "anka_ra_colors.xml":
+                          continue
+                      orig = open(p, encoding="utf-8", errors="ignore").read()
+                      if bname.startswith("values"):
+                          def _rep_col(m):
+                              new_c = remap_hex_color(m.group(2).lower(), m.group(3))
+                              return m.group(1) + new_c + m.group(4)
+                          new_txt = color_tag_pat.sub(_rep_col, orig)
+                          # Koyu tema windowBackground / colorSurface / colorAccent degerlerini de guncelle
+                          if "theme" in fn.lower() or "style" in fn.lower() or "glass" in fn.lower():
+                              new_txt = re.sub(
+                                  r'(<item\s+name="(?:android:)?windowBackground">)\s*#[0-9a-fA-F](6, 8)(\s*</item>)',
+                                  r'\g<1>#060A14\g<2>',
+                                  new_txt
+                              )
+                              new_txt = re.sub(
+                                  r'(<item\s+name="(?:colorAccent|colorPrimary|colorSecondary)">)\s*#[0-9a-fA-F](6, 8)(\s*</item>)',
+                                  r'\g<1>#00C2FF\g<2>',
+                                  new_txt
+                              )
+                          if safe_write_xml(p, new_txt, orig):
+                              ui_color_files += 1
+                              print(f"UI Tema/Renk yamalandi: {p}")
+                      elif bname.startswith("drawable") and "<shape" in orig:
+                          fn_l = fn.lower()
+                          new_txt = orig
+                          # Kart / panel / tile / glass drawables -> 22dp kose + Anka cam kenarlik
+                          if any(k in fn_l for k in ("card", "tile", "panel", "glass", "addon", "player", "dock", "nav", "pill", "item_bg", "container")):
+                              def _bump_radius(m):
+                                  val = float(m.group(2))
+                                  if 2.0 <= val <= 18.0:
+                                      return m.group(1) + "22dp" + m.group(3)
+                                  return m.group(0)
+                              new_txt = re.sub(r'(android:radius=")(\d+(?:\.\d+)?)dp(")', _bump_radius, new_txt)
+                              if "<stroke" in new_txt:
+                                  new_txt = re.sub(r'(<stroke\b[^>]*android:color=")#[0-9a-fA-F](6, 8)(")', r'\g<1>#3800C2FF\g<2>', new_txt)
+                              # Duz koyu kart rengini Anka cam rengine cek
+                              new_txt = re.sub(r'(<solid\s+android:color=")#[0-9a-fA-F]2(?:1[0-9a-fA-F]|2[0-9a-fA-F]|0[89a-fA-F])3(")', r'\g<1>#DC10192C\g<2>', new_txt)
+                          # Oynat / Play dairesel dugmesine Anka Mavi->Kizil gradyan ver
+                          if any(k in fn_l for k in ("play_bg", "btn_play", "play_button", "play_pause_bg", "fab_bg")) and "<solid" in new_txt and "<gradient" not in new_txt:
+                              new_txt = re.sub(
+                                  r'<solid\s+android:color="[^"]+"\s*/>',
+                                  '<gradient android:angle="315" android:startColor="#00C2FF" android:endColor="#FF3D2E" android:type="linear" />',
+                                  new_txt,
+                                  count=1
+                              )
+                          if safe_write_xml(p, new_txt, orig):
+                              ui_drawable_files += 1
+                              print(f"UI Glass Drawable yamalandi: {p}")
+
+          print(f"OK: ANKA_RA Modern UI yamasi -> {ui_color_files} tema/renk dosyasi, {ui_drawable_files} glass drawable.")
+
+          # =========================================================
+          # 4) KAHVE / KO-FI / BAGIS UYARISINI 3 KAYNAKTAN KALDIR
+          # =========================================================
           banner_java = "fermata/src/main/java/me/aap/fermata/ui/view/PhoneSupportBannerController.java"
           if os.path.isfile(banner_java):
               src = open(banner_java, encoding="utf-8").read()
-              # import static satirlarina dokunmadan sadece setVisibility(...) cagrilarini GONE yap
               new_src = re.sub(
                   r'\.setVisibility\(\s*(?:(?:android\.view\.)?View\.)?VISIBLE\s*\)',
                   '.setVisibility(android.view.View.GONE)',
                   src
               )
-              # Banner gosteren void metotlari erken sonlandir
               void_pat = re.compile(r'(\bvoid\s+(?:show|maybeShow|display|schedule|attach|bind|start|init|onStart|onResume)[A-Za-z0-9_]*\s*\([^;{)]*\)\s*\{)')
               new_src = void_pat.sub(r'\1 if (true) return; ', new_src)
               if new_src != src:
                   open(banner_java, "w", encoding="utf-8").write(new_src)
                   print("OK: PhoneSupportBannerController kapatildi.")
 
-          # Banner XML layout'larini GONE yap
           for dp, _, files in os.walk("fermata/src"):
               if "/test" in dp.replace("\\", "/"):
                   continue
@@ -357,29 +702,18 @@ jobs:
                               new_txt = re.sub(r'android:visibility="[^"]*"', 'android:visibility="gone"', txt, count=1)
                           else:
                               new_txt = re.sub(r'(<[A-Za-z0-9_.]+\b)', r'\1 android:visibility="gone"', txt, count=1)
-                          if new_txt != txt:
-                              open(p, "w", encoding="utf-8").write(new_txt)
+                          if safe_write_xml(p, new_txt, txt):
                               print(f"OK: Kahve banner layout gizlendi: {p}")
 
-          # 3B) NavBarMediator.java (Alt/yan menudeki kahve butonu ve diyalogu)
           nav_java = "fermata/src/main/java/me/aap/fermata/ui/fragment/NavBarMediator.java"
           if os.path.isfile(nav_java):
               src = open(nav_java, encoding="utf-8").read()
-              new_src = re.sub(
-                  r'if\s*\(\s*BuildConfig\.AUTO\s*\)\s*b\.addItem\(\s*R\.id\.nav_donate',
-                  'if (false && BuildConfig.AUTO) b.addItem(R.id.nav_donate',
-                  src
-              )
-              new_src = re.sub(
-                  r'if\s*\(\s*BuildConfig\.AUTO\s*&&\s*\(\s*item\.getItemId\(\)\s*==\s*R\.id\.nav_donate\s*\)\s*\)',
-                  'if (false && BuildConfig.AUTO && (item.getItemId() == R.id.nav_donate))',
-                  new_src
-              )
+              new_src = re.sub(r'if\s*\(\s*BuildConfig\.AUTO\s*\)\s*b\.addItem\(\s*R\.id\.nav_donate', 'if (false && BuildConfig.AUTO) b.addItem(R.id.nav_donate', src)
+              new_src = re.sub(r'if\s*\(\s*BuildConfig\.AUTO\s*&&\s*\(\s*item\.getItemId\(\)\s*==\s*R\.id\.nav_donate\s*\)\s*\)', 'if (false && BuildConfig.AUTO && (item.getItemId() == R.id.nav_donate))', new_src)
               if new_src != src:
                   open(nav_java, "w", encoding="utf-8").write(new_src)
                   print("OK: NavBarMediator kahve menusu kaldirildi.")
 
-          # 3C) SettingsFragment.java (Ayarlardaki Ko-fi / kahve satiri)
           settings_java = "fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java"
           if os.path.isfile(settings_java):
               src = open(settings_java, encoding="utf-8").read()
@@ -388,15 +722,12 @@ jobs:
                   brace_open = src.rfind("{", 0, idx)
                   if brace_open != -1 and "->" in src[max(0, brace_open - 25):brace_open]:
                       stmt_start = max(src.rfind(";", 0, brace_open), src.rfind("{", 0, brace_open), src.rfind("}", 0, brace_open)) + 1
-                      depth = 0
-                      i = brace_open
+                      depth, i = 0, brace_open
                       while i < len(src):
-                          if src[i] == "{":
-                              depth += 1
+                          if src[i] == "{": depth += 1
                           elif src[i] == "}":
                               depth -= 1
-                              if depth == 0:
-                                  break
+                              if depth == 0: break
                           i += 1
                       semi = src.find(";", i)
                       if semi != -1:
@@ -406,30 +737,83 @@ jobs:
                           print("OK: SettingsFragment Ko-fi butonu kaldirildi.")
 
           # =========================================================
-          # 4) ADDON (AUDIOBOOKS / STREMIO / TIKTOK) & TV INCELEME (TEST HARIC)
+          # 5) AUDIOBOOKS, STREMIO VE TIKTOK KARTLARINI DASHBOARD/NAV'DAN GIZLE
+          #    (Derlemeyi bozmadan capability etiketlerini temizler)
           # =========================================================
-          print("=== ADDON & DASHBOARD DOSYALARI (src/main) ===")
-          for dp, _, files in os.walk("fermata/src"):
-              norm = dp.replace("\\", "/")
-              if "/test" in norm or "/androidTest" in norm:
+          hidden_caps_count = 0
+          for root in ("fermata/src", "modules"):
+              if not os.path.isdir(root):
                   continue
-              for fn in files:
-                  if not fn.endswith(".java"):
+              for dp, _, files in os.walk(root):
+                  norm = dp.replace("\\", "/")
+                  if "/test" in norm or "/androidTest" in norm or "/build/" in norm:
                       continue
-                  p = os.path.join(dp, fn)
-                  txt = open(p, encoding="utf-8", errors="ignore").read()
-                  if any(k in fn for k in ("AddonManager", "PhoneLauncher", "GlassPhone", "AddonUiMetadata", "AddonsFragment")):
-                      print(f"--- DOSYA: {p} ---")
-                      for idx, line in enumerate(txt.splitlines(), 1):
-                          if re.search(r'(audiobook|stremio|tiktok|getAddonInfos|isEnabled|ADDONS|Role\.|Addon Module|dashboard|card)', line, re.IGNORECASE):
-                              print(f"  {idx}: {line.strip()[:140]}")
-
-          print("=== TV MODULU DOSYALARI (modules/tv/src/main) ===")
-          if os.path.isdir("modules/tv/src/main"):
-              for dp, _, files in os.walk("modules/tv/src/main"):
                   for fn in files:
-                      if fn.endswith(".java"):
-                          print(" ", os.path.join(dp, fn))
+                      if not fn.endswith((".xml", ".java")):
+                          continue
+                      p = os.path.join(dp, fn)
+                      orig = open(p, encoding="utf-8", errors="ignore").read()
+                      new_txt = orig
+                      # Capability dizgilerinde audiobook / stremio / tiktok gecenlerde dashboard ve navigation etiketini cikar
+                      def _strip_dash_nav(m):
+                          q, val = m.group(1), m.group(2)
+                          low = val.lower()
+                          if any(b in low for b in ("audiobook", "stremio", "tiktok")):
+                              parts = [x.strip() for x in val.split(",") if x.strip().lower() not in ("dashboard", "navigation")]
+                              if parts != [x.strip() for x in val.split(",")]:
+                                  return q + ",".join(parts) + q
+                          return m.group(0)
+                      new_txt = re.sub(r'(")([^"\n]*(?:dashboard|navigation)[^"\n]*)"', lambda m: _strip_dash_nav(m), new_txt)
+                      if new_txt != orig:
+                          if fn.endswith(".xml"):
+                              if safe_write_xml(p, new_txt, orig):
+                                  hidden_caps_count += 1
+                                  print(f"Addon dashboard/nav gizlendi (XML): {p}")
+                          else:
+                              open(p, "w", encoding="utf-8").write(new_txt)
+                              hidden_caps_count += 1
+                              print(f"Addon dashboard/nav gizlendi (Java): {p}")
+          print(f"Toplam gizlenen Audiobook/Stremio/TikTok capability yamasi: {hidden_caps_count}")
+
+          # =========================================================
+          # 6) HACIM ASISTAN & FAVORILER SINIFLARINI VE IZINLERI EKLE
+          # =========================================================
+          hacim_dir = "fermata/src/main/java/me/aap/fermata/hacim"
+          os.makedirs(hacim_dir, exist_ok=True)
+          open(os.path.join(hacim_dir, "HacimAssistant.java"), "w", encoding="utf-8").write(
+              base64.b64decode("".join(HACIM_JAVA_B64.split())).decode("utf-8")
+          )
+          open(os.path.join(hacim_dir, "FavoritesManager.java"), "w", encoding="utf-8").write(
+              base64.b64decode("".join(FAV_JAVA_B64.split())).decode("utf-8")
+          )
+          print("OK: HacimAssistant.java ve FavoritesManager.java projeye eklendi.")
+
+          # AndroidManifest'e mikrofon ve konum izni ekle (yoksa)
+          main_manifest = "fermata/src/main/AndroidManifest.xml"
+          if os.path.isfile(main_manifest):
+              morig = open(main_manifest, encoding="utf-8").read()
+              mnew = morig
+              for perm in (
+                  "android.permission.RECORD_AUDIO",
+                  "android.permission.ACCESS_COARSE_LOCATION",
+                  "android.permission.ACCESS_FINE_LOCATION",
+              ):
+                  if perm not in mnew:
+                      mnew = mnew.replace("<application", f'    <uses-permission android:name="{perm}" />\n    <application', 1)
+              if safe_write_xml(main_manifest, mnew, morig):
+                  print("OK: AndroidManifest izinleri eklendi.")
+
+          # =========================================================
+          # 7) SONRAKI ADIM ICIN KISA KOD HARITASI (TV + GLASS + LAUNCHER)
+          # =========================================================
+          print("=== GLASS / LAUNCHER / TV HARITASI ===")
+          for root in ("fermata/src/main", "fermata/src/auto", "modules/tv/src/main"):
+              if not os.path.isdir(root):
+                  continue
+              for dp, _, files in os.walk(root):
+                  for fn in sorted(files):
+                      if fn.endswith((".java", ".xml")) and any(k in fn.lower() for k in ("glass", "launcher", "addon", "tv", "color", "theme")):
+                          print("  [FILE]", os.path.join(dp, fn))
           PY
 
       - name: Build Auto Release Bundle (AAB)
